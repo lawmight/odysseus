@@ -52,6 +52,50 @@ Odysseus admin UI can also store the key on a **Model Endpoint** row (encrypted 
 
 ---
 
+## Cloud environment dashboard install script
+
+If you configure an environment at [Cloud Agents → Environments → Configure](https://cursor.com/dashboard/cloud-agents/environments) (e.g. `github.com/lawmight/odysseus`), the **Install script** field runs when the VM is prepared. It is separate from the repo’s [`.cursor/environment.json`](.cursor/environment.json) `install` hook (which runs again on each new agent if present).
+
+**Replace the old three-line script** (`python3 -m venv` + `venv/bin/pip install -r requirements.txt` + `npm install`). On Ubuntu Cloud VMs it usually fails because **`python3.12-venv` is not installed**: `python3 -m venv` leaves a broken `venv/` (no `venv/bin/activate`, no pip), so every agent shows “install script failed”.
+
+**Recommended dashboard script** (installs system packages, removes a broken venv, then runs the repo bootstrap):
+
+```bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3.12-venv tmux
+if [[ -d venv ]] && [[ ! -f venv/bin/activate ]]; then rm -rf venv; fi
+bash scripts/cloud-agent-install.sh
+```
+
+If `scripts/cloud-agent-install.sh` is not on your default branch yet, use this **inline** install instead:
+
+```bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3.12-venv tmux
+[[ -d venv ]] && [[ ! -f venv/bin/activate ]] && rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -U pip wheel
+python -m pip install -r requirements.txt
+for req in requirements-optional.txt requirements-cursor.txt; do
+  [[ -f "$req" ]] && python -m pip install -r "$req"
+done
+[[ -f package.json ]] && command -v npm >/dev/null && npm install --no-audit --no-fund
+if [[ ! -f data/auth.json ]]; then
+  export ODYSSEUS_ADMIN_PASSWORD="${ODYSSEUS_ADMIN_PASSWORD:-odysseus-$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')}"
+  python setup.py
+fi
+echo "install: OK"
+```
+
+After saving, **start a new Cloud Agent** (new task). Editing the script mid-chat does not fix VMs that already failed install.
+
+---
+
 ## Startup script (`install` in `.cursor/environment.json`)
 
 Cursor runs the **`install`** command from [`.cursor/environment.json`](.cursor/environment.json) on each fresh machine **before** the agent works:

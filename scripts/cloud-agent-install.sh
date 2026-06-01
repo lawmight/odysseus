@@ -11,15 +11,51 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-# venv (Cloud VMs sometimes lack python3-venv on first boot)
-if ! python3 -m venv --help >/dev/null 2>&1; then
-  echo "cloud-agent-install: python3-venv missing — run: sudo apt-get install -y python3.12-venv tmux" >&2
+_py_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+
+_venv_usable() {
+  [[ -f venv/bin/activate ]] && [[ -x venv/bin/pip ]]
+}
+
+_ensure_python_venv_package() {
+  if _venv_usable; then
+    return 0
+  fi
+  if python3 -m venv /tmp/odysseus-venv-probe >/dev/null 2>&1 \
+    && [[ -f /tmp/odysseus-venv-probe/bin/activate ]]; then
+    rm -rf /tmp/odysseus-venv-probe
+    return 0
+  fi
+  rm -rf /tmp/odysseus-venv-probe 2>/dev/null || true
+
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "cloud-agent-install: installing python${_py_minor}-venv (required for pip in venv)…"
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      "python${_py_minor}-venv" tmux
+    return 0
+  fi
+
+  echo "cloud-agent-install: python3-venv missing — install python${_py_minor}-venv and tmux, then re-run." >&2
   exit 1
+}
+
+_ensure_python_venv_package
+
+if [[ -d venv ]] && ! _venv_usable; then
+  echo "cloud-agent-install: removing broken venv (missing activate or pip — usually python3-venv was not installed)" >&2
+  rm -rf venv
 fi
 
 if [[ ! -d venv ]]; then
   python3 -m venv venv
 fi
+
+if ! _venv_usable; then
+  echo "cloud-agent-install: venv still broken after create; check python3-venv / disk space." >&2
+  exit 1
+fi
+
 # shellcheck disable=SC1091
 source venv/bin/activate
 
