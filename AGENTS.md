@@ -23,13 +23,21 @@ On this VM, allowed secret names are exposed as:
 echo "$CLOUD_AGENT_ALL_SECRET_NAMES"
 ```
 
-If you only see `ALLOW_VERCEL_CHAT`, then **`CURSOR_API_KEY` is not registered for this Cloud Agent environment** — even if you created a key elsewhere.
+If `CURSOR_API_KEY` is missing from that list, the VM did **not** receive it — even when the Cloud Agents dashboard **Secrets** table shows the row.
+
+### Dashboard shows the secret, but the VM still does not
+
+On some runs only **Personal**-scoped secrets are injected. Example: `ALLOW_VERCEL_CHAT` appears in `CLOUD_AGENT_ALL_SECRET_NAMES` and is set, while `CURSOR_API_KEY` was added with **Environment** scope and never appears in the list or in `env`.
+
+**Workaround:** delete the Environment-scoped `CURSOR_API_KEY`, re-add it as **Personal** scope (same name and `key_…` value), then start a **new** Cloud Agent task and re-run the verify command below.
+
+If Personal scope still fails, it is likely a Cursor platform issue — contact support with: secret visible in dashboard, `CLOUD_AGENT_ALL_SECRET_NAMES` omits it, fresh agent run.
 
 ### Fix (dashboard — ~2 minutes)
 
 1. Open [Cloud Agents setup](https://cursor.com/dashboard/cloud-agents) (or **Cursor Settings → Cloud Agents → your environment → Secrets**).
 2. Add a secret with **Name** exactly: `CURSOR_API_KEY`  
-   **Value**: your key from [Integrations](https://cursor.com/dashboard/integrations) (`key_…` format).
+   **Value**: your key from [Integrations](https://cursor.com/dashboard/integrations) (`key_…` format). Prefer **Personal** scope if Environment-scoped secrets are not injected on your workspace.
 3. Ensure the secret is attached to the **same environment** this repo uses (not only another team/repo group).
 4. **Start a new Cloud Agent** (new task). Secrets are injected at VM boot; editing secrets mid-chat often does not update a running VM.
 
