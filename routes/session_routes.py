@@ -234,10 +234,14 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id.strip()).first()
                 if ep and ep.api_key:
                     resolved_key = ep.api_key
+                    from src.endpoint_resolver import build_headers
+                    session.headers = build_headers(ep.api_key, ep.base_url, getattr(ep, "provider_config", None))
             finally:
                 _db.close()
-        if resolved_key:
+        if resolved_key and not session.headers:
             session.headers = {"Authorization": f"Bearer {resolved_key}"}
+            session_manager.save_sessions()
+        elif session.headers:
             session_manager.save_sessions()
         # Fire webhook (sync-safe)
         if webhook_manager:
@@ -294,7 +298,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                     ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
                     if ep and ep.api_key:
                         from src.endpoint_resolver import build_headers
-                        session.headers = build_headers(ep.api_key, ep.base_url)
+                        session.headers = build_headers(ep.api_key, ep.base_url, getattr(ep, "provider_config", None))
                 finally:
                     _db.close()
             # Persist to DB

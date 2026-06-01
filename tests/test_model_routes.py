@@ -20,11 +20,13 @@ if "core.database" not in sys.modules:
 import routes.model_routes as model_routes
 import src.endpoint_resolver as endpoint_resolver
 from routes.model_routes import (
+    CursorAdapterError,
     _match_provider_curated,
     _curate_models,
     _is_chat_model,
     _classify_endpoint,
     _probe_endpoint,
+    _probe_single_model,
     _truthy,
     _PROVIDER_CURATED,
 )
@@ -266,3 +268,19 @@ class TestSetupProbeSafety:
         monkeypatch.setattr(model_routes.httpx, "get", fake_get)
 
         assert _probe_endpoint("https://api.anthropic.com/v1") == ANTHROPIC_MODELS
+
+    def test_cursor_probe_uses_cursor_models_endpoint(self, monkeypatch):
+        monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=5: ["composer-2.5"])
+
+        assert _probe_endpoint("cursor://local", "cur-key") == ["composer-2.5"]
+
+    def test_cursor_probe_returns_empty_on_cursor_error(self, monkeypatch):
+        def fail(api_key, timeout=5):
+            raise CursorAdapterError("bad key", status=401)
+
+        monkeypatch.setattr(model_routes, "list_cursor_models", fail)
+
+        assert _probe_endpoint("cursor://local", "bad-key") == []
+
+    def test_cursor_single_model_probe_is_metadata_only(self):
+        assert _probe_single_model("cursor://local", "cur-key", "composer-2.5")["status"] == "ok"

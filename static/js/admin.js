@@ -542,6 +542,8 @@ async function _saveEpModelState(epId, panel) {
 function initEndpointForm() {
   const provider = el('adm-epProvider');
   const urlInput = el('adm-epUrl');
+  const cursorRow = el('adm-epCursorRow');
+  const cursorCwd = el('adm-epCursorCwd');
 
   // Custom provider picker — mirrors the (now hidden) <select id="adm-epProvider">
   // so the rest of this function (which reads provider.value and dispatches
@@ -590,8 +592,17 @@ function initEndpointForm() {
   }
 
   provider.addEventListener('change', () => {
+    const isCursor = provider.value === 'cursor://local';
     if (provider.value) urlInput.value = provider.value;
     else urlInput.value = '';
+    if (cursorRow) cursorRow.classList.toggle('hidden', !isCursor);
+    if (isCursor) {
+      urlInput.style.display = 'none';
+      const epType = el('adm-epType');
+      if (epType) epType.value = 'llm';
+    } else {
+      urlInput.style.display = '';
+    }
   });
   function _normalizeBaseUrl(raw) {
     let u = raw.trim();
@@ -638,6 +649,10 @@ function initEndpointForm() {
       const fd = new FormData();
       fd.append('base_url', url);
       if (apiKey) fd.append('api_key', apiKey);
+      if (provider.value === 'cursor://local') {
+        fd.append('provider', 'cursor');
+        if (cursorCwd && cursorCwd.value.trim()) fd.append('cursor_cwd', cursorCwd.value.trim());
+      }
       const epType = el('adm-epType');
       if (epType) fd.append('model_type', epType.value);
       fd.append('skip_probe', 'true');
@@ -647,6 +662,8 @@ function initEndpointForm() {
         const count = d.models ? d.models.length : 0;
         urlInput.value = ''; urlInput.style.display = '';
         el('adm-epApiKey').value = ''; provider.value = '';
+        if (cursorCwd) cursorCwd.value = '';
+        if (cursorRow) cursorRow.classList.add('hidden');
         if (epType) epType.value = 'llm';
         if (d.id) _recentlyAddedEpId = String(d.id);
         loadEndpoints();

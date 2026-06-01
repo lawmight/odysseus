@@ -142,6 +142,8 @@ ANTHROPIC_MODELS = [
 
 def _detect_provider(url: str) -> str:
     """Detect API provider from URL."""
+    if (url or "").strip().lower().startswith("cursor://"):
+        return "cursor"
     if "anthropic.com" in (url or ""):
         return "anthropic"
     return "openai"
@@ -150,6 +152,7 @@ def _detect_provider(url: str) -> str:
 def _provider_label(url: str) -> str:
     """Human-friendly provider name for error messages."""
     u = (url or "").lower()
+    if u.startswith("cursor://"): return "Cursor"
     if "anthropic.com" in u: return "Anthropic"
     if "api.x.ai" in u or "x.ai/" in u: return "xAI"
     if "openai.com" in u: return "OpenAI"
@@ -367,6 +370,12 @@ def _normalize_anthropic_url(url: str) -> str:
 
 def list_model_ids(base_chat_url: str, timeout: int = LLMConfig.DEFAULT_TIMEOUT, headers: Optional[Dict] = None) -> List[str]:
     """List available model IDs from an endpoint."""
+    if _detect_provider(base_chat_url) == "cursor":
+        try:
+            from src.providers.cursor_adapter import extract_cursor_api_key, list_cursor_models
+            return list_cursor_models(extract_cursor_api_key(headers), timeout=timeout)
+        except Exception:
+            return []
     if _detect_provider(base_chat_url) == "anthropic":
         return list(ANTHROPIC_MODELS)
     try:
@@ -614,6 +623,14 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - data: [DONE]                       — end of stream
     """
     provider = _detect_provider(url)
+    if provider == "cursor":
+        from src.providers.cursor_adapter import extract_cursor_api_key, extract_cursor_cwd, stream_cursor_chat
+        api_key = extract_cursor_api_key(headers)
+        cwd = extract_cursor_cwd(headers)
+        async for chunk in stream_cursor_chat(model, messages, api_key=api_key, cwd=cwd):
+            yield chunk
+        return
+
     messages_copy = [msg.copy() for msg in messages]
 
     # Consolidate multiple system messages into one at the start.

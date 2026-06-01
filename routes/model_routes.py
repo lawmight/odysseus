@@ -17,6 +17,13 @@ from src.llm_core import _detect_provider, ANTHROPIC_MODELS
 from src.settings import load_settings as _load_settings, save_settings as _save_settings
 from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_url, build_headers, _anthropic_api_root
 from src.auth_helpers import owner_filter
+from src.providers.cursor_adapter import (
+    CURSOR_LOCAL_URL,
+    CursorAdapterError,
+    cursor_provider_config,
+    is_cursor_url,
+    list_cursor_models,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +140,32 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("true", "1", "yes", "on")
 
 
+def _normalize_provider(provider: str | None, base_url: str | None) -> str:
+    raw = (provider or "").strip().lower()
+    if raw == "cursor" or is_cursor_url(base_url):
+        return "cursor"
+    if raw in ("anthropic", "openai_compat"):
+        return raw
+    return "anthropic" if _detect_provider(base_url or "") == "anthropic" else "openai_compat"
+
+
+def _endpoint_base_and_provider(ep) -> tuple[str, str]:
+    provider = _normalize_provider(getattr(ep, "provider", None), getattr(ep, "base_url", ""))
+    base = CURSOR_LOCAL_URL if provider == "cursor" else _normalize_base(ep.base_url)
+    return base, provider
+
+
+def _anthropic_models_url(base: str) -> str:
+    root = _anthropic_api_root(base)
+    if isinstance(root, str):
+        return root.rstrip("/") + "/v1/models"
+    base = (base or "").strip().rstrip("/")
+    host = urlparse(base).hostname or ""
+    if host.endswith("anthropic.com") and base.endswith("/v1"):
+        base = base[:-3].rstrip("/")
+    return base + "/v1/models"
+
+
 # Prefixes/substrings for models that are NOT chat-completions-capable
 _NON_CHAT_PREFIXES = (
     "dall-e", "tts-", "whisper", "text-embedding", "embedding",
@@ -167,6 +200,8 @@ def _is_chat_model(model_id: str) -> bool:
 def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 10, with_tools: bool = False) -> dict:
     """Send a realistic completion request to a single model. Returns {status, latency_ms, error?}."""
     provider = _detect_provider(base)
+    if provider == "cursor":
+        return {"status": "ok", "latency_ms": 0, "note": "Cursor model validated via /v1/models"}
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Say OK"},
@@ -233,6 +268,8 @@ def _classify_endpoint(base_url: str) -> str:
     """Return 'local' if the endpoint URL points to a private/local address, else 'api'.
     Includes the Tailscale CGNAT range (100.64.0.0/10) so tailnet-hosted
     servers (e.g. Cookbook serve endpoints) get reachability-probed too."""
+    if is_cursor_url(base_url):
+        return "local"
     try:
         host = urlparse(base_url).hostname or ""
         if host in _LOCAL_HOSTS or host.startswith(_PRIVATE_PREFIXES):
@@ -249,10 +286,17 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
     """Probe a base URL's /models endpoint and return list of model IDs.
     For Anthropic, queries their /v1/models API, falling back to hardcoded list."""
     from src.endpoint_resolver import resolve_url
-    base = resolve_url(_normalize_base(base_url))
+    base = _normalize_base(base_url)
+    if is_cursor_url(base):
+        try:
+            return list_cursor_models(api_key, timeout=timeout)
+        except CursorAdapterError as e:
+            logger.warning(f"Cursor /v1/models failed: {e}")
+            return []
+    base = resolve_url(base)
     if _detect_provider(base) == "anthropic":
         # Try Anthropic's /v1/models endpoint first
-        url = _anthropic_api_root(base) + "/v1/models"
+        url = _anthropic_models_url(base)
         headers = {"anthropic-version": "2023-06-01"}
         if api_key:
             headers["x-api-key"] = api_key
@@ -414,8 +458,8 @@ def setup_model_routes(model_discovery):
             db.close()
 
         for ep in endpoints:
-            base = _normalize_base(ep.base_url)
-            provider = _detect_provider(base)
+            base, endpoint_provider = _endpoint_base_and_provider(ep)
+            provider = "cursor" if endpoint_provider == "cursor" else _detect_provider(base)
             # Use cached models — background refresh keeps them updated
             model_ids = []
             if ep.cached_models:
@@ -433,7 +477,7 @@ def setup_model_routes(model_discovery):
                     pass
             model_ids = [m for m in model_ids if m not in hidden]
             # Build correct URL based on provider
-            if provider == "anthropic":
+            if provider in ("anthropic", "cursor"):
                 chat_url = build_chat_url(base)
             else:
                 chat_url = base + "/chat/completions"
@@ -541,14 +585,16 @@ def setup_model_routes(model_discovery):
         try:
             endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
             local_eps = [
-                (ep.id, _normalize_base(ep.base_url), ep.api_key)
+                (ep.id, _endpoint_base_and_provider(ep)[0], ep.api_key)
                 for ep in endpoints
-                if _classify_endpoint(_normalize_base(ep.base_url)) == "local"
+                if _classify_endpoint(_endpoint_base_and_provider(ep)[0]) == "local"
             ]
         finally:
             db.close()
 
         async def _probe_one(ep_id: str, base: str, api_key: Optional[str]) -> Dict[str, Any]:
+            if is_cursor_url(base):
+                return {"alive": True, "latency_ms": None, "status_code": None, "error": None}
             url = base.rstrip("/") + "/models"
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
             t0 = _time.time()
@@ -586,8 +632,8 @@ def setup_model_routes(model_discovery):
 
         results = []
         for ep in endpoints:
-            base = _normalize_base(ep.base_url)
-            provider = _detect_provider(base)
+            base, endpoint_provider = _endpoint_base_and_provider(ep)
+            provider = "cursor" if endpoint_provider == "cursor" else _detect_provider(base)
             entry = {
                 "id": ep.id,
                 "name": ep.name,
@@ -595,7 +641,19 @@ def setup_model_routes(model_discovery):
                 "provider": provider,
                 "category": _classify_endpoint(base),
             }
-            if provider == "anthropic":
+            if provider == "cursor":
+                try:
+                    t0 = _time.time()
+                    models = list_cursor_models(ep.api_key, timeout=5)
+                    entry["latency_ms"] = round((_time.time() - t0) * 1000)
+                    entry["status"] = "online"
+                    entry["model_count"] = len(models)
+                except Exception as e:
+                    entry["latency_ms"] = None
+                    entry["status"] = "offline"
+                    entry["error"] = str(e)
+                    entry["model_count"] = 0
+            elif provider == "anthropic":
                 # Anthropic has no /models endpoint; just check connectivity
                 try:
                     t0 = _time.time()
@@ -800,6 +858,8 @@ def setup_model_routes(model_discovery):
                     "online": len(all_models) > 0,
                     "model_type": getattr(r, "model_type", None) or "llm",
                     "supports_tools": getattr(r, "supports_tools", None),
+                    "provider": _normalize_provider(getattr(r, "provider", None), r.base_url),
+                    "provider_config": getattr(r, "provider_config", None),
                 })
             return results
         finally:
@@ -815,6 +875,9 @@ def setup_model_routes(model_discovery):
         require_models: str = Form("false"),
         model_type: str = Form("llm"),
         supports_tools: str = Form(""),  # "true"/"false"/"" (unknown)
+        provider: str = Form(""),
+        provider_config: str = Form(""),
+        cursor_cwd: str = Form(""),
         # Default `shared=true` → endpoints are visible to all users (the
         # app's historical behaviour). Admins can pass `shared=false` to
         # scope a new endpoint to their own account only.
@@ -822,25 +885,38 @@ def setup_model_routes(model_discovery):
     ):
         require_admin(request)
         base_url = base_url.strip().rstrip("/")
+        endpoint_provider = _normalize_provider(provider, base_url)
+        if endpoint_provider == "cursor":
+            base_url = CURSOR_LOCAL_URL
         # Normalize: strip trailing /models, /chat/completions, /v1/messages etc to get clean base
-        for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages"]:
-            if base_url.endswith(suffix):
-                base_url = base_url[:-len(suffix)].rstrip("/")
+        if endpoint_provider != "cursor":
+            for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages"]:
+                if base_url.endswith(suffix):
+                    base_url = base_url[:-len(suffix)].rstrip("/")
         if not base_url:
             raise HTTPException(400, "Base URL is required")
         # Resolve hostname via Tailscale if DNS fails
-        from src.endpoint_resolver import resolve_url
-        base_url = resolve_url(base_url)
+        if endpoint_provider != "cursor":
+            from src.endpoint_resolver import resolve_url
+            base_url = resolve_url(base_url)
+        elif not api_key.strip():
+            raise HTTPException(400, "Cursor API key is required")
 
         # Auto-generate name from URL if not provided
         if not name.strip():
-            name = base_url.replace("http://", "").replace("https://", "").split("/")[0]
+            name = "Cursor (local)" if endpoint_provider == "cursor" else base_url.replace("http://", "").replace("https://", "").split("/")[0]
 
         require_model_list = _truthy(require_models)
-        should_probe = require_model_list or not _truthy(skip_probe)
+        should_probe = endpoint_provider == "cursor" or require_model_list or not _truthy(skip_probe)
 
         # Quick model list fetch (1s timeout — if endpoint is slow, it'll update on next refresh)
-        model_ids = _probe_endpoint(base_url, api_key.strip() or None, timeout=1) if should_probe else []
+        if endpoint_provider == "cursor":
+            try:
+                model_ids = list_cursor_models(api_key.strip(), timeout=5) if should_probe else []
+            except CursorAdapterError as e:
+                raise HTTPException(e.status, str(e))
+        else:
+            model_ids = _probe_endpoint(base_url, api_key.strip() or None, timeout=1) if should_probe else []
         if require_model_list and not model_ids:
             raise HTTPException(400, "No models found for that provider/key")
 
@@ -864,8 +940,10 @@ def setup_model_routes(model_discovery):
                 is_enabled=True,
                 model_type=model_type.strip() if model_type else "llm",
                 cached_models=json.dumps(model_ids) if model_ids else None,
-                supports_tools=_st,
+                supports_tools=False if endpoint_provider == "cursor" else _st,
                 owner=_owner_val,
+                provider=endpoint_provider,
+                provider_config=provider_config.strip() or cursor_provider_config(cursor_cwd.strip() or None) or None,
             )
             db.add(ep)
             db.commit()
@@ -896,11 +974,12 @@ def setup_model_routes(model_discovery):
             ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
             if not ep:
                 raise HTTPException(404, "Endpoint not found")
-            ep_data = {"id": ep.id, "name": ep.name, "base_url": ep.base_url, "api_key": ep.api_key}
+            base, endpoint_provider = _endpoint_base_and_provider(ep)
+            ep_data = {"id": ep.id, "name": ep.name, "base_url": base, "api_key": ep.api_key, "provider": endpoint_provider}
         finally:
             db.close()
 
-        base = _normalize_base(ep_data["base_url"])
+        base = ep_data["base_url"]
         all_models = _probe_endpoint(base, ep_data["api_key"])
         chat_models = [m for m in all_models if _is_chat_model(m)]
         skipped = len(all_models) - len(chat_models)
@@ -1083,7 +1162,7 @@ def setup_model_routes(model_discovery):
                 ep = _last_q.first()
             if not ep:
                 return {"endpoint_id": "", "endpoint_url": "", "model": ""}
-            base = _normalize_base(ep.base_url)
+            base, _endpoint_provider = _endpoint_base_and_provider(ep)
             chat_url = build_chat_url(base)
             if not model and getattr(ep, "cached_models", None):
                 try:

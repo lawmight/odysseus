@@ -2010,6 +2010,7 @@
                 </div>
                 <select id="adm-epProvider" style="display:none">
                   <option value="">Custom URL</option>
+                  <option value="cursor://local" data-logo="cursor">Cursor (local)</option>
                   <option value="https://api.anthropic.com" data-logo="anthropic">Anthropic</option>
                   <option value="https://api.deepseek.com/v1" data-logo="deepseek">DeepSeek</option>
                   <option value="https://api.openai.com/v1" data-logo="openai">OpenAI</option>
@@ -2032,6 +2033,9 @@
                     <option value="image">Image</option>
                   </select>
                   <button class="admin-btn-add" id="adm-epAddBtn" style="width:55px;text-align:center;">Add</button>
+                </div>
+                <div class="admin-model-form-row hidden" id="adm-epCursorRow">
+                  <input id="adm-epCursorCwd" type="text" placeholder="Workspace directory for Cursor bridge (default: Odysseus cwd)" style="flex:1">
                 </div>
               </div>
             </div>
