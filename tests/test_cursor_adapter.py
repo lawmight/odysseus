@@ -86,6 +86,22 @@ def test_validate_cursor_cwd_allows_filesystem_root(monkeypatch):
     assert cursor_adapter.validate_cursor_cwd("/workspace") == "/workspace"
 
 
+def test_iter_content_blocks_expands_tuple_content():
+    class Block:
+        type = "text"
+        text = "hello"
+
+    class Payload:
+        content = (Block(),)
+
+    class Event:
+        message = Payload()
+
+    blocks = list(cursor_adapter._iter_content_blocks(Event()))
+    assert len(blocks) == 1
+    assert cursor_adapter._get_attr(blocks[0], "text") == "hello"
+
+
 def test_build_cursor_prompt_merges_history():
     prompt = cursor_adapter.build_cursor_prompt(
         [

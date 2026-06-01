@@ -250,7 +250,7 @@ def _iter_content_blocks(message: Any) -> Iterable[Any]:
     if content is None:
         text = _get_attr(message, "text", None)
         return [text] if text else []
-    if isinstance(content, list):
+    if isinstance(content, (list, tuple)):
         return content
     return [content]
 
