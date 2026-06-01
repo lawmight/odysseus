@@ -639,8 +639,10 @@ function initEndpointForm() {
     msg.textContent = ''; msg.className = '';
     const rawUrl = (provider.value || urlInput.value).trim();
     const apiKey = el('adm-epApiKey').value.trim();
+    const isCursor = rawUrl === 'cursor://local';
     if (!rawUrl) { msg.textContent = 'Select a provider or enter a base URL'; msg.className = 'admin-error'; return; }
-    if (provider.value && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (provider.value && !isCursor && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (isCursor && !apiKey) { msg.textContent = 'Cursor API key is required'; msg.className = 'admin-error'; return; }
     // Normalize URL (fix typos, add /v1, strip wrong paths)
     const url = provider.value ? rawUrl : _normalizeBaseUrl(rawUrl);
     const btn = el('adm-epAddBtn');

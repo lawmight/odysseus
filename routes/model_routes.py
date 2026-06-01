@@ -23,6 +23,8 @@ from src.providers.cursor_adapter import (
     cursor_provider_config,
     is_cursor_url,
     list_cursor_models,
+    parse_provider_config,
+    validate_cursor_cwd,
 )
 
 logger = logging.getLogger(__name__)
@@ -156,14 +158,7 @@ def _endpoint_base_and_provider(ep) -> tuple[str, str]:
 
 
 def _anthropic_models_url(base: str) -> str:
-    root = _anthropic_api_root(base)
-    if isinstance(root, str):
-        return root.rstrip("/") + "/v1/models"
-    base = (base or "").strip().rstrip("/")
-    host = urlparse(base).hostname or ""
-    if host.endswith("anthropic.com") and base.endswith("/v1"):
-        base = base[:-3].rstrip("/")
-    return base + "/v1/models"
+    return _anthropic_api_root(base).rstrip("/") + "/v1/models"
 
 
 # Prefixes/substrings for models that are NOT chat-completions-capable
@@ -201,7 +196,16 @@ def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 1
     """Send a realistic completion request to a single model. Returns {status, latency_ms, error?}."""
     provider = _detect_provider(base)
     if provider == "cursor":
-        return {"status": "ok", "latency_ms": 0, "note": "Cursor model validated via /v1/models"}
+        t0 = _time.time()
+        try:
+            models = list_cursor_models(api_key, timeout=timeout)
+            latency = round((_time.time() - t0) * 1000)
+            if model_id in models:
+                return {"status": "ok", "latency_ms": latency, "note": "Cursor model validated via /v1/models"}
+            return {"status": "fail", "latency_ms": latency, "error": "Model not returned by Cursor /v1/models"}
+        except CursorAdapterError as e:
+            latency = round((_time.time() - t0) * 1000)
+            return {"status": "fail", "latency_ms": latency, "error": str(e)[:120]}
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Say OK"},
@@ -592,9 +596,18 @@ def setup_model_routes(model_discovery):
         finally:
             db.close()
 
+        import asyncio as _asyncio
+
         async def _probe_one(ep_id: str, base: str, api_key: Optional[str]) -> Dict[str, Any]:
             if is_cursor_url(base):
-                return {"alive": True, "latency_ms": None, "status_code": None, "error": None}
+                t0 = _time.time()
+                try:
+                    await _asyncio.to_thread(list_cursor_models, api_key, 1.5)
+                    lat = round((_time.time() - t0) * 1000)
+                    return {"alive": True, "latency_ms": lat, "status_code": 200, "error": None}
+                except CursorAdapterError as e:
+                    lat = round((_time.time() - t0) * 1000)
+                    return {"alive": False, "latency_ms": lat, "status_code": e.status, "error": str(e)}
             url = base.rstrip("/") + "/models"
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
             t0 = _time.time()
@@ -607,7 +620,6 @@ def setup_model_routes(model_discovery):
             except Exception as e:
                 return {"alive": False, "latency_ms": None, "status_code": None, "error": str(e)[:120]}
 
-        import asyncio as _asyncio
         results_list = await _asyncio.gather(
             *[_probe_one(eid, base, key) for eid, base, key in local_eps],
             return_exceptions=False,
@@ -888,6 +900,9 @@ def setup_model_routes(model_discovery):
         endpoint_provider = _normalize_provider(provider, base_url)
         if endpoint_provider == "cursor":
             base_url = CURSOR_LOCAL_URL
+            normalized_model_type = (model_type.strip() if model_type else "llm") or "llm"
+            if normalized_model_type != "llm":
+                raise HTTPException(400, "Cursor endpoints only support LLM model_type")
         # Normalize: strip trailing /models, /chat/completions, /v1/messages etc to get clean base
         if endpoint_provider != "cursor":
             for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages"]:
@@ -901,6 +916,18 @@ def setup_model_routes(model_discovery):
             base_url = resolve_url(base_url)
         elif not api_key.strip():
             raise HTTPException(400, "Cursor API key is required")
+
+        normalized_model_type = (model_type.strip() if model_type else "llm") or "llm"
+        provider_config_value = provider_config.strip()
+        if endpoint_provider == "cursor":
+            cursor_config = parse_provider_config(provider_config_value)
+            cursor_cwd_value = str(cursor_config.get("cwd") or cursor_cwd.strip() or "")
+            try:
+                cursor_workspace = validate_cursor_cwd(cursor_cwd_value or None)
+            except CursorAdapterError as e:
+                raise HTTPException(e.status, str(e))
+            provider_config_value = cursor_provider_config(cursor_workspace)
+            normalized_model_type = "llm"
 
         # Auto-generate name from URL if not provided
         if not name.strip():
@@ -938,12 +965,12 @@ def setup_model_routes(model_discovery):
                 base_url=base_url,
                 api_key=api_key.strip() or None,
                 is_enabled=True,
-                model_type=model_type.strip() if model_type else "llm",
+                model_type=normalized_model_type,
                 cached_models=json.dumps(model_ids) if model_ids else None,
                 supports_tools=False if endpoint_provider == "cursor" else _st,
                 owner=_owner_val,
                 provider=endpoint_provider,
-                provider_config=provider_config.strip() or cursor_provider_config(cursor_cwd.strip() or None) or None,
+                provider_config=provider_config_value or None,
             )
             db.add(ep)
             db.commit()
@@ -961,8 +988,13 @@ def setup_model_routes(model_discovery):
         return {
             "id": ep_id,
             "name": name.strip(),
+            "base_url": base_url,
             "models": model_ids,
             "online": len(model_ids) > 0,
+            "model_type": normalized_model_type,
+            "supports_tools": False if endpoint_provider == "cursor" else _st,
+            "provider": endpoint_provider,
+            "provider_config": provider_config_value or None,
         }
 
     @router.get("/model-endpoints/{ep_id}/probe")
@@ -1201,7 +1233,10 @@ def setup_model_routes(model_discovery):
                 if "name" in body and isinstance(body["name"], str):
                     ep.name = body["name"].strip() or ep.name
                 if "model_type" in body and isinstance(body["model_type"], str):
-                    ep.model_type = body["model_type"].strip() or ep.model_type
+                    next_model_type = body["model_type"].strip() or ep.model_type
+                    if _normalize_provider(getattr(ep, "provider", None), getattr(ep, "base_url", "")) == "cursor" and next_model_type != "llm":
+                        raise HTTPException(400, "Cursor endpoints only support LLM model_type")
+                    ep.model_type = next_model_type
             else:
                 ep.is_enabled = not ep.is_enabled
             db.commit()

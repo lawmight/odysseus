@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections import OrderedDict
 import json
+import logging
 import os
+import sys
 import time
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional
 
@@ -14,6 +17,8 @@ import httpx
 CURSOR_LOCAL_URL = "cursor://local"
 CURSOR_MODELS_URL = "https://api.cursor.com/v1/models"
 _CURSOR_CWD_HEADER = "X-Odysseus-Cursor-Cwd"
+_BRIDGE_CACHE_MAX = int(os.getenv("CURSOR_BRIDGE_CACHE_MAX", "4") or "4")
+logger = logging.getLogger(__name__)
 
 try:
     from cursor_sdk import AsyncClient, LocalAgentOptions  # type: ignore
@@ -34,7 +39,7 @@ class CursorAdapterError(Exception):
 
 
 _bridge_lock = asyncio.Lock()
-_bridge_clients: Dict[str, Dict[str, Any]] = {}
+_bridge_clients: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
 
 def is_cursor_url(url: str | None) -> bool:
@@ -108,7 +113,7 @@ def _allowed_roots() -> List[str]:
 def validate_cursor_cwd(cwd: str | None) -> str:
     path = os.path.realpath(os.path.abspath(cwd or os.getcwd()))
     roots = _allowed_roots()
-    if not any(path == root or path.startswith(root + os.sep) for root in roots):
+    if not any(os.path.commonpath([path, root]) == root for root in roots):
         allowed = ", ".join(roots)
         raise CursorAdapterError(
             f"Cursor workspace directory must be inside CURSOR_ALLOWED_WORKSPACE_ROOTS ({allowed}).",
@@ -127,17 +132,17 @@ def _cursor_auth_headers(api_key: str) -> Dict[str, str]:
 def list_cursor_models(api_key: str | None, timeout: float = 5.0) -> List[str]:
     """Return live Cursor model IDs from the public models endpoint."""
     if not api_key:
-        raise CursorAdapterError("Cursor API key is required.", status=401)
+        raise CursorAdapterError("Cursor API key required.", status=401)
     try:
         response = httpx.get(CURSOR_MODELS_URL, headers=_cursor_auth_headers(api_key), timeout=timeout)
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else 502
         if status in (401, 403):
-            raise CursorAdapterError("Cursor rejected the API key. Re-paste it in Model Endpoints.", status=status)
-        raise CursorAdapterError(f"Cursor models request failed with HTTP {status}.", status=status)
-    except Exception as exc:
-        raise CursorAdapterError(f"Could not reach Cursor models API: {exc}", status=503)
+            raise CursorAdapterError("Cursor rejected the API key. Re-paste it in Model Endpoints.", status=status) from exc
+        raise CursorAdapterError(f"Cursor models request failed with HTTP {status}.", status=status) from exc
+    except httpx.RequestError as exc:
+        raise CursorAdapterError(f"Could not reach Cursor models API: {exc}", status=503) from exc
 
     data = response.json()
     items = data.get("items") or data.get("data") or []
@@ -148,20 +153,52 @@ def list_cursor_models(api_key: str | None, timeout: float = 5.0) -> List[str]:
     return models
 
 
+async def _close_bridge_entry(entry: Dict[str, Any]) -> None:
+    ctx = entry.get("ctx")
+    client = entry.get("client")
+    try:
+        if ctx is not None:
+            await ctx.__aexit__(None, None, None)
+        elif client is not None and hasattr(client, "aclose"):
+            await client.aclose()
+    except Exception:
+        logger.warning("Failed to close Cursor bridge client", exc_info=True)
+
+
+async def close_cursor_bridges() -> None:
+    """Close cached Cursor SDK bridge clients during application shutdown."""
+    async with _bridge_lock:
+        entries = list(_bridge_clients.values())
+        _bridge_clients.clear()
+    for entry in entries:
+        await _close_bridge_entry(entry)
+
+
 async def _get_bridge_client(cwd: str) -> Any:
     if not CURSOR_SDK_AVAILABLE:
         raise CursorAdapterError(
             "Cursor SDK is not installed. Run `pip install -r requirements-cursor.txt` on the Odysseus host.",
             status=503,
         )
+    evicted: List[Dict[str, Any]] = []
     async with _bridge_lock:
         cached = _bridge_clients.get(cwd)
         if cached and cached.get("client"):
+            _bridge_clients.move_to_end(cwd)
             return cached["client"]
         ctx = await AsyncClient.launch_bridge(workspace=cwd)  # type: ignore[union-attr]
-        client = await ctx.__aenter__()
+        try:
+            client = await ctx.__aenter__()
+        except Exception:
+            await ctx.__aexit__(*sys.exc_info())
+            raise
         _bridge_clients[cwd] = {"ctx": ctx, "client": client}
-        return client
+        while _BRIDGE_CACHE_MAX > 0 and len(_bridge_clients) > _BRIDGE_CACHE_MAX:
+            _, entry = _bridge_clients.popitem(last=False)
+            evicted.append(entry)
+    for entry in evicted:
+        await _close_bridge_entry(entry)
+    return client
 
 
 def _message_text(content: Any) -> str:
@@ -228,7 +265,7 @@ async def stream_cursor_chat(
     start = time.time()
     try:
         if not api_key:
-            raise CursorAdapterError("Cursor API key is required.", status=401)
+            raise CursorAdapterError("Cursor API key required.", status=401)
         workspace = validate_cursor_cwd(cwd)
         client = await _get_bridge_client(workspace)
         prompt = build_cursor_prompt(messages)
@@ -264,9 +301,10 @@ async def stream_cursor_chat(
     except CursorAdapterError as exc:
         yield f"event: error\ndata: {json.dumps({'status': exc.status, 'text': str(exc), 'error': str(exc)})}\n\n"
     except Exception as exc:
+        logger.exception("Unexpected Cursor stream failure")
         message = str(exc) or exc.__class__.__name__
         lower = message.lower()
         status = 401 if "unauthorized" in lower or "api key" in lower else 502
-        if "bridge" in lower or "cursor" in lower and "not found" in lower:
+        if ("bridge" in lower or "cursor" in lower) and "not found" in lower:
             message = f"{message}. Ensure the Cursor SDK bridge can run on the Odysseus host."
         yield f"event: error\ndata: {json.dumps({'status': status, 'text': message, 'error': message})}\n\n"

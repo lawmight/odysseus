@@ -352,6 +352,16 @@ def _build_anthropic_headers(headers):
                 h[k] = v
     return h
 
+
+def _normalize_headers(headers):
+    if isinstance(headers, str):
+        try:
+            headers = json.loads(headers)
+        except Exception:
+            return None
+    return headers if isinstance(headers, dict) else None
+
+
 def _parse_anthropic_response(data: dict) -> str:
     """Extract text from Anthropic response."""
     for block in data.get("content", []):
@@ -373,7 +383,8 @@ def list_model_ids(base_chat_url: str, timeout: int = LLMConfig.DEFAULT_TIMEOUT,
     if _detect_provider(base_chat_url) == "cursor":
         try:
             from src.providers.cursor_adapter import extract_cursor_api_key, list_cursor_models
-            return list_cursor_models(extract_cursor_api_key(headers), timeout=timeout)
+            normalized_headers = _normalize_headers(headers)
+            return list_cursor_models(extract_cursor_api_key(normalized_headers), timeout=timeout)
         except Exception:
             return []
     if _detect_provider(base_chat_url) == "anthropic":
@@ -625,8 +636,9 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     provider = _detect_provider(url)
     if provider == "cursor":
         from src.providers.cursor_adapter import extract_cursor_api_key, extract_cursor_cwd, stream_cursor_chat
-        api_key = extract_cursor_api_key(headers)
-        cwd = extract_cursor_cwd(headers)
+        normalized_headers = _normalize_headers(headers)
+        api_key = extract_cursor_api_key(normalized_headers)
+        cwd = extract_cursor_cwd(normalized_headers)
         async for chunk in stream_cursor_chat(model, messages, api_key=api_key, cwd=cwd):
             yield chunk
         return

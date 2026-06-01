@@ -1,6 +1,6 @@
 {
   "install": "bash scripts/cloud-agent-install.sh",
-  "start": "bash scripts/cloud-agent-services.sh start || true",
+  "start": "bash scripts/cloud-agent-services.sh start",
   "terminals": [
     {
       "name": "odysseus",
