@@ -95,6 +95,9 @@ done
 [[ -f package.json ]] && command -v npm >/dev/null && npm install --no-audit --no-fund
 if [[ ! -f data/auth.json ]]; then
   export ODYSSEUS_ADMIN_PASSWORD="${ODYSSEUS_ADMIN_PASSWORD:-odysseus-$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')}"
+  export ODYSSEUS_ADMIN_PASSWORD_FILE="${ODYSSEUS_ADMIN_PASSWORD_FILE:-data/admin-password.txt}"
+  install -d -m 700 data
+  (umask 077 && printf '%s\n' "$ODYSSEUS_ADMIN_PASSWORD" > "$ODYSSEUS_ADMIN_PASSWORD_FILE")
   python setup.py
 fi
 echo "install: OK"
@@ -118,6 +121,7 @@ That script (idempotent):
 - Installs `requirements.txt`, `requirements-optional.txt`, and **`requirements-cursor.txt`** (`cursor-sdk`)
 - Runs `npm install` if Node is present
 - Runs `python setup.py` once if `data/auth.json` is missing
+- Saves a generated first-boot admin password to `data/admin-password.txt` (0600) instead of logging the value
 
 You do **not** need to hand-run `pip install -r requirements-cursor.txt` if `install` has already succeeded — check:
 
@@ -193,6 +197,7 @@ Open `http://localhost:7000`. First boot: run `setup.py` or rely on `cloud-agent
 ### Auth for local testing
 
 After `python setup.py`, credentials live in `data/auth.json`. Initial admin password is printed once on first create. Re-running setup skips user creation if `auth.json` exists.
+When `cloud-agent-install.sh` generates the password, it stores it in `data/admin-password.txt` and suppresses the value in install logs.
 
 ### Lint
 

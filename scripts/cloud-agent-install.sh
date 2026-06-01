@@ -83,7 +83,12 @@ if [[ ! -f data/auth.json ]]; then
     fi
     export ODYSSEUS_ADMIN_PASSWORD="odysseus-${_pw_suffix}"
     unset _pw_suffix
-    echo "cloud-agent-install: created admin password in ODYSSEUS_ADMIN_PASSWORD (value not logged)"
+    export ODYSSEUS_ADMIN_PASSWORD_FILE="data/admin-password.txt"
+    install -d -m 700 data
+    (umask 077 && printf '%s\n' "$ODYSSEUS_ADMIN_PASSWORD" > "$ODYSSEUS_ADMIN_PASSWORD_FILE")
+    echo "cloud-agent-install: created admin password at $ODYSSEUS_ADMIN_PASSWORD_FILE (value not logged)"
+  else
+    echo "cloud-agent-install: using ODYSSEUS_ADMIN_PASSWORD from environment (value not logged)"
   fi
   python setup.py
 fi

@@ -27,6 +27,10 @@ DIRS = [
 ]
 
 
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def create_dirs():
     for d in DIRS:
         os.makedirs(d, exist_ok=True)
@@ -55,7 +59,8 @@ def create_default_admin():
         import json
 
         username = os.getenv("ODYSSEUS_ADMIN_USER", "admin").strip() or "admin"
-        password = os.getenv("ODYSSEUS_ADMIN_PASSWORD") or __import__("secrets").token_urlsafe(18)
+        password_env = os.getenv("ODYSSEUS_ADMIN_PASSWORD")
+        password = password_env or __import__("secrets").token_urlsafe(18)
         hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         auth_data = {
             "users": {
@@ -68,7 +73,14 @@ def create_default_admin():
         with open(auth_path, "w") as f:
             json.dump(auth_data, f, indent=2)
         print(f"  [ok] Initial admin user created ({username})")
-        print(f"        Temporary password: {password}")
+        password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
+        hide_password = bool(password_env) or _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG")
+        if hide_password and password_file:
+            print(f"        Temporary password saved at: {password_file}")
+        elif hide_password:
+            print("        Temporary password set via ODYSSEUS_ADMIN_PASSWORD (value not printed)")
+        else:
+            print(f"        Temporary password: {password}")
         print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
     except ImportError:
         print("  [warn] bcrypt not installed — skipping admin user creation")
@@ -116,6 +128,17 @@ def check_deps():
         print("  [ok] tmux installed")
 
 
+def admin_password_hint():
+    password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
+    if password_file:
+        return f"Login with the admin username and the temporary password saved at {password_file}."
+    if os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+        return "Login with the admin username and your ODYSSEUS_ADMIN_PASSWORD value."
+    if _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG"):
+        return "Login with the admin username and the temporary password generated during setup."
+    return "Login with the admin username and temporary password printed above."
+
+
 def main():
     print("\n=== Odysseus Setup ===\n")
 
@@ -145,7 +168,7 @@ def main():
     print(f"\nStart the server with:")
     print(f"  uvicorn app:app --host 0.0.0.0 --port 7000")
     print(f"\nThen open http://localhost:7000")
-    print(f"Login with the admin username and temporary password printed above.\n")
+    print(f"{admin_password_hint()}\n")
 
 
 if __name__ == "__main__":
