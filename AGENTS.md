@@ -2,6 +2,8 @@
 
 Guide for humans and agents working in this repo on **Cursor Cloud** (desktop VM or headless).
 
+Odysseus is a **Python 3.11+ FastAPI** app with a static JS frontend (no frontend build step). See `README.md` for full product docs.
+
 ## What you cannot expect the agent to do
 
 | Task | Who does it |
@@ -77,14 +79,30 @@ Optional **`start`** / **`terminals`** in `environment.json` call `scripts/cloud
 
 ---
 
-## Docker (ChromaDB, SearXNG, ntfy)
+## Docker (Compose)
 
-Odysseus does not require Docker for the Cursor adapter, but **vector memory** and **web search** expect sidecars from `docker-compose.yml`.
+Odysseus does not require Docker for the Cursor adapter, but **vector memory** and **web search** expect services from `docker-compose.yml`.
 
-### Quick start (each session if daemon is down)
+| Service | Port | Purpose |
+|---------|------|---------|
+| **odysseus** | 7000 | Main app (UI + API) |
+| **chromadb** | 8100 (host) | Vector memory / skills |
+| **searxng** | 8080 (localhost only) | Web search |
+| **ntfy** | 8091 | Push reminders (optional) |
+
+On Cloud VMs, Docker often requires `sudo` and the daemon may be stopped on boot:
 
 ```bash
-sudo dockerd >/tmp/dockerd.log 2>&1 &    # if docker info fails
+sudo service docker start   # or: sudo dockerd >/tmp/dockerd.log 2>&1 &
+cp .env.example .env        # first time only
+sudo docker compose up -d --build
+```
+
+Healthy vector memory logs should include `ChromaDB connected` and `MemoryVectorStore initialized` (`sudo docker compose logs odysseus`).
+
+### Sidecars only (manual uvicorn on the host)
+
+```bash
 sudo docker compose up -d chromadb searxng ntfy
 ```
 
@@ -94,7 +112,7 @@ Or use the helper:
 bash scripts/cloud-agent-services.sh start
 ```
 
-Host ports (from README): Chroma **8100**, SearXNG **127.0.0.1:8080**, ntfy **8091**.
+Host ports: Chroma **8100**, SearXNG **127.0.0.1:8080**, ntfy **8091**. Compose maps Chroma **8100→8000** inside the network.
 
 ### Permission gotcha
 
@@ -120,6 +138,14 @@ uvicorn app:app --host 127.0.0.1 --port 7000
 
 Open `http://localhost:7000`. First boot: run `setup.py` or rely on `cloud-agent-install.sh`.
 
+### Auth for local testing
+
+After `python setup.py`, credentials live in `data/auth.json`. Initial admin password is printed once on first create. Re-running setup skips user creation if `auth.json` exists.
+
+### Lint
+
+No project-wide linter is configured.
+
 ### Tests
 
 ```bash
@@ -128,6 +154,8 @@ pytest
 ```
 
 Cursor-specific: `pytest tests/test_cursor_adapter.py tests/test_model_routes.py -q`
+
+Optional JS-related tests: `pytest tests/test_compare_js.py` (needs Node). Bombadil E2E: see `tests/bombadil-spec.ts` and `npm install`.
 
 ### Live Cursor smoke (needs `CURSOR_API_KEY`)
 
@@ -152,6 +180,18 @@ async def main():
 asyncio.run(main())
 PY
 ```
+
+### Build
+
+- **Docker image:** `sudo docker compose build`
+- **Frontend:** none (static files under `static/`)
+
+### Gotchas
+
+- **Docker socket permissions:** use `sudo docker compose …` if you see `permission denied` on `/var/run/docker.sock`.
+- **LLM features** need a configured provider in Settings (or env); the stack runs without one, but chat/agent/research will not generate until configured.
+- **Cookbook on Linux** needs `tmux` on the host for background downloads/serves.
+- Pip installs in `venv` do not hot-reload inside a running Odysseus **container**; rebuild/restart the container after dependency changes when using Compose.
 
 ---
 
