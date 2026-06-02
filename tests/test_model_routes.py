@@ -543,6 +543,38 @@ def test_create_cursor_endpoint_rejects_non_llm_model_type(cursor_route_env):
     assert "only support LLM" in excinfo.value.detail
 
 
+def test_api_models_normalizes_cursor_cached_entries(monkeypatch, cursor_route_env):
+    rows, workspace = cursor_route_env
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur",
+            name="Cursor (local)",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps(
+                [
+                    {"id": "composer-2.5", "displayName": "Composer 2.5"},
+                    {"id": "default", "displayName": "Auto"},
+                ]
+            ),
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    get_models = _model_endpoint_route("/api/models", "GET")
+
+    result = get_models(_fake_model_request(user="admin"))
+
+    assert len(result["items"]) == 1
+    item = result["items"][0]
+    assert item["models"] == ["composer-2.5", "default"]
+    assert item["models_display"] == ["Composer 2.5", "Auto"]
+    assert item["url"] == model_routes.CURSOR_LOCAL_URL
+
+
 def test_ollama_endpoint_error_message_includes_troubleshooting():
     msg = model_routes._model_endpoint_error_message(
         "http://localhost:11434/v1",

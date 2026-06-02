@@ -507,10 +507,13 @@ def setup_model_routes(model_discovery):
                         to_probe.append(ep)
 
                     def _probe_one(ep):
-                        base = _normalize_base(ep.base_url)
+                        base, endpoint_provider = _endpoint_base_and_provider(ep)
                         try:
-                            ids = _probe_endpoint(base, ep.api_key, timeout=2)
-                            return ep, ids, None
+                            if endpoint_provider == "cursor":
+                                payload = list_cursor_model_entries(ep.api_key, timeout=2)
+                            else:
+                                payload = _probe_endpoint(base, ep.api_key, timeout=2)
+                            return ep, payload, None
                         except Exception as e:
                             return ep, None, e
 
@@ -565,9 +568,16 @@ def setup_model_routes(model_discovery):
             provider = "cursor" if endpoint_provider == "cursor" else _detect_provider(base)
             # Use cached models — background refresh keeps them updated
             model_ids = []
+            display_by_id: Dict[str, str] = {}
             if ep.cached_models:
                 try:
-                    model_ids = json.loads(ep.cached_models)
+                    raw = json.loads(ep.cached_models)
+                    if endpoint_provider == "cursor":
+                        entries = normalize_cached_cursor_models(raw)
+                        model_ids = [e["id"] for e in entries]
+                        display_by_id = {e["id"]: e["displayName"] for e in entries}
+                    elif isinstance(raw, list):
+                        model_ids = raw
                 except Exception:
                     pass
             ep_model_type = getattr(ep, "model_type", None) or "llm"
@@ -583,6 +593,11 @@ def setup_model_routes(model_discovery):
             chat_url = build_chat_url(base)
             category = _classify_endpoint(base)
 
+            def _model_display(mid: str) -> str:
+                if mid in display_by_id:
+                    return display_by_id[mid]
+                return mid.split("/")[-1]
+
             if model_ids:
                 curated_key = _match_provider_curated(base, None)
                 curated, extra = _curate_models(model_ids, curated_key)
@@ -591,9 +606,9 @@ def setup_model_routes(model_discovery):
                     "port": 0,
                     "url": chat_url,
                     "models": curated,
-                    "models_display": [mid.split("/")[-1] for mid in curated],
+                    "models_display": [_model_display(mid) for mid in curated],
                     "models_extra": extra,
-                    "models_extra_display": [mid.split("/")[-1] for mid in extra],
+                    "models_extra_display": [_model_display(mid) for mid in extra],
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,
