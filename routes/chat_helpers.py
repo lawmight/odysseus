@@ -150,6 +150,9 @@ async def auto_name_session(session_manager, sess):
             sess.endpoint_url, sess.model, sess.headers,
         )
 
+        if not t_url or not t_model:
+            return
+
         # max_tokens big enough that reasoning models (Minimax M2,
         # DeepSeek R1, QwQ, etc.) have headroom for <think>…</think>
         # plus the actual title — 200 used to clip them mid-reasoning
@@ -188,7 +191,7 @@ def try_fallback_endpoint(sess, session_id: str) -> dict | None:
     Returns {"model": ..., "endpoint_url": ..., "endpoint_name": ...} or None.
     """
     import requests as _req
-    from src.endpoint_resolver import build_chat_url, build_headers, normalize_base
+    from src.endpoint_resolver import build_chat_url, build_headers, build_models_url, normalize_base
 
     current_url = sess.endpoint_url or ""
     db = SessionLocal()
@@ -205,21 +208,25 @@ def try_fallback_endpoint(sess, session_id: str) -> dict | None:
         if current_url and base in current_url:
             continue
         # Quick ping
-        ping_url = base + "/models"
-        headers = {}
-        if ep.api_key:
-            headers["Authorization"] = f"Bearer {ep.api_key}"
+        ping_url = build_models_url(base)
+        headers = build_headers(ep.api_key, base)
         try:
             r = _req.get(ping_url, headers=headers, timeout=5)
             r.raise_for_status()
             data = r.json()
             models = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
             if not models:
+                models = [
+                    m.get("name") or m.get("model")
+                    for m in (data.get("models") or [])
+                    if m.get("name") or m.get("model")
+                ]
+            if not models:
                 continue
             # Found a working endpoint — update session
             new_model = models[0]
             chat_url = build_chat_url(base)
-            new_headers = build_headers(ep.api_key, base)
+            new_headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
 
             sess.model = new_model
             sess.endpoint_url = chat_url
@@ -318,7 +325,7 @@ def resolve_session_auth(sess, session_id: str):
             if domain:
                 ep = db.query(ModelEndpoint).filter(ModelEndpoint.base_url.contains(domain)).first()
                 if ep and ep.api_key:
-                    sess.headers = build_headers(ep.api_key, ep.base_url)
+                    sess.headers = build_headers(ep.api_key, ep.base_url, getattr(ep, "provider_config", None))
                     db.query(DBSession).filter(DBSession.id == session_id).update(
                         {"headers": json.dumps(sess.headers)}
                     )

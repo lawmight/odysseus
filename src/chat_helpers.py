@@ -23,6 +23,51 @@ def extract_urls(text: str) -> List[str]:
     return cleaned_urls
 
 
+# Model-name substrings that signal native image input. A missed match here
+# silently drops the image from the chat request (it gets swapped for a text
+# caption), so the model never sees it. Keep this broad, especially for local
+# models (Ollama/llama.cpp) that ship under many names. See issue #124.
+_VISION_MODEL_KEYWORDS = (
+    # hosted
+    "gpt-4o", "gpt-4.1", "gpt-4.5", "gpt-4-turbo", "gpt-4-vision",
+    "claude-sonnet", "claude-opus", "claude-haiku", "gemini",
+    # open / local
+    "vision", "llava", "bakllava", "moondream", "pixtral", "minicpm",
+    "internvl", "cogvlm", "qwen-vl", "qwen2-vl", "qwen3-vl", "qwen3vl",
+)
+# Catches the "*-VL-*" / "*VL*" family not covered by a literal keyword above
+# (e.g. Qwen2.5-VL and various tags): a standalone "vl" token, plus "vlm".
+_VISION_VL_RE = re.compile(r'(?<![a-z])vl(?![a-z])|vlm')
+
+
+def is_vision_model(model_name: str) -> bool:
+    """Best-effort check of whether a model can natively accept images.
+
+    Decides whether image attachments get passed through to the model or
+    swapped for a separate caption. Err toward True, since a false negative
+    drops the image entirely. See issue #124.
+    """
+    m = (model_name or "").lower()
+    if any(kw in m for kw in _VISION_MODEL_KEYWORDS):
+        return True
+    return bool(_VISION_VL_RE.search(m))
+
+
+def chat_accepts_image_attachments(model_name: str, endpoint_url: str) -> bool:
+    """True when the active chat endpoint can receive images in the user turn.
+
+    Cursor Chat uses the SDK (SDKImage), not the Settings → Vision sidecar.
+    """
+    if is_vision_model(model_name):
+        return True
+    try:
+        from src.providers.cursor_adapter import is_cursor_url
+
+        return is_cursor_url(endpoint_url or "")
+    except Exception:
+        return False
+
+
 def validate_message(message: str) -> str:
     """Validate message input."""
     if not message:
