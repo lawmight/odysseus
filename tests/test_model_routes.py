@@ -16,17 +16,6 @@ if _endpoint_resolver is not None and not getattr(_endpoint_resolver, "__file__"
     sys.modules.pop("src.endpoint_resolver", None)
     sys.modules.pop("routes.model_routes", None)
 
-if "core.database" not in sys.modules:
-    _core_db = types.ModuleType("core.database")
-    for _name in [
-        "SessionLocal", "ModelEndpoint", "Session", "ChatMessage", "Document",
-        "DocumentVersion", "GalleryImage", "GalleryAlbum", "Note",
-        "CalendarCal", "CalendarEvent", "ScheduledTask", "TaskRun",
-        "McpServer",
-    ]:
-        setattr(_core_db, _name, MagicMock())
-    sys.modules["core.database"] = _core_db
-
 import routes.model_routes as model_routes
 import src.endpoint_resolver as endpoint_resolver
 from routes.model_routes import (
@@ -334,16 +323,36 @@ class TestSetupProbeSafety:
         assert "Model not returned" in result["error"]
 
 
+class _RouteCondition:
+    def __init__(self, op, field, value=None, left=None, right=None):
+        self.op = op
+        self.field = field
+        self.value = value
+        self.left = left
+        self.right = right
+
+    def __or__(self, other):
+        return _RouteCondition("or", None, None, self, other)
+
+
 class _RouteColumn:
     def __init__(self, name):
         self.name = name
 
     def __eq__(self, value):
-        return ("eq", self.name, value)
+        return _RouteCondition("eq", self.name, value)
+
+    def is_(self, value):
+        return _RouteCondition("is", self.name, value)
+
+    def desc(self):
+        return _RouteCondition("desc", self.name)
 
 
 class _RouteModelEndpoint:
     id = _RouteColumn("id")
+    base_url = _RouteColumn("base_url")
+    owner = _RouteColumn("owner")
     is_enabled = _RouteColumn("is_enabled")
     created_at = _RouteColumn("created_at")
 
@@ -360,10 +369,21 @@ class _RouteQuery:
 
     def filter(self, *conditions):
         for condition in conditions:
-            if isinstance(condition, tuple) and condition[0] == "eq":
-                _, field, value = condition
-                self.rows = [row for row in self.rows if getattr(row, field) == value]
+            self.rows = [row for row in self.rows if self._matches(row, condition)]
         return self
+
+    @staticmethod
+    def _matches(row, condition):
+        if isinstance(condition, _RouteCondition):
+            if condition.op == "eq":
+                return getattr(row, condition.field) == condition.value
+            if condition.op == "is":
+                return getattr(row, condition.field, None) is condition.value
+            if condition.op == "or":
+                return _RouteQuery._matches(row, condition.left) or _RouteQuery._matches(
+                    row, condition.right
+                )
+        return True
 
     def order_by(self, *args):
         return self
@@ -400,6 +420,13 @@ def _model_endpoint_route(path, method):
     raise AssertionError(f"{method} {path} route not found")
 
 
+def _fake_model_request(user=None):
+    """Minimal FastAPI Request stand-in for route handlers that read request.state."""
+    req = SimpleNamespace()
+    req.state = SimpleNamespace(current_user=user)
+    return req
+
+
 @pytest.fixture
 def cursor_route_env(monkeypatch, tmp_path):
     rows = []
@@ -418,7 +445,7 @@ def test_create_cursor_endpoint_stores_provider_metadata(cursor_route_env):
     create = _model_endpoint_route("/api/model-endpoints", "POST")
 
     response = create(
-        SimpleNamespace(),
+        _fake_model_request(),
         name="cursor-endpoint",
         base_url="cursor://local",
         api_key="cur-key",
@@ -476,7 +503,7 @@ def test_create_cursor_endpoint_propagates_cursor_error(monkeypatch, cursor_rout
 
     with pytest.raises(HTTPException) as excinfo:
         create(
-            SimpleNamespace(),
+            _fake_model_request(),
             name="cursor-endpoint-error",
             base_url="cursor://local",
             api_key="bad-key",
@@ -500,7 +527,7 @@ def test_create_cursor_endpoint_rejects_non_llm_model_type(cursor_route_env):
 
     with pytest.raises(HTTPException) as excinfo:
         create(
-            SimpleNamespace(),
+            _fake_model_request(),
             name="cursor-endpoint-image",
             base_url="cursor://local",
             api_key="cur-key",
