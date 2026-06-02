@@ -171,10 +171,6 @@ def _endpoint_base_and_provider(ep) -> tuple[str, str]:
     return base, provider
 
 
-def _anthropic_models_url(base: str) -> str:
-    return _anthropic_api_root(base).rstrip("/") + "/v1/models"
-
-
 # Prefixes/substrings for models that are NOT chat-completions-capable
 _NON_CHAT_PREFIXES = (
     "dall-e", "tts-", "whisper", "text-embedding", "embedding",

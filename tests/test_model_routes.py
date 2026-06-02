@@ -243,11 +243,6 @@ class TestSetupProbeSafety:
     def test_anthropic_probe_does_not_double_v1(self, monkeypatch):
         monkeypatch.setattr(endpoint_resolver, "resolve_url", lambda url: url, raising=False)
         monkeypatch.setattr(model_routes, "_normalize_base", lambda url: url.rstrip("/"))
-        monkeypatch.setattr(
-            model_routes,
-            "_anthropic_api_root",
-            lambda url: url.rstrip("/")[:-3].rstrip("/") if url.rstrip("/").endswith("/v1") else url.rstrip("/"),
-        )
         seen = []
 
         def fake_get(url, headers=None, timeout=None):
