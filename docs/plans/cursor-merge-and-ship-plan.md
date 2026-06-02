@@ -1,6 +1,6 @@
 # Cursor integration — merge & ship plan
 
-**Status:** Active (housekeeping + path to `main`)  
+**Status:** Shipped on `main` as of `3a1b985` (PR [#2](https://github.com/lawmight/odysseus/pull/2), merged 2026-06-02)  
 **Date:** 2026-06-02  
 **Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), Plan B (deferred), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
 
@@ -163,20 +163,15 @@ Merge when green; then PR #2 → `main` as today.
 
 ---
 
-## 6. Follow-up: Cursor useful tools (Plan C+ sketch)
+## 6. Follow-up: Cursor useful tools (Plan C+)
 
-**Not part of A/C ship.** Draft scope for a later plan doc:
-
-1. Map SDK `tool_call` events in `stream_cursor_chat` (start with `generateImage`).
-2. On completion, copy/serve asset from Cursor bridge path → Odysseus `image_url` SSE (reuse chat.js image bubbles).
-3. Decide Chat vs Agent policy: which Cursor-native tools appear in Chat without full Plan B.
-4. Tests + “no shell spam in Chat” guardrails.
+**Not part of A/C ship.** See [cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md) for the full Plan C+ doc.
 
 Handoff prompt when ready:
 
 ```
-Implement Cursor useful tools (generateImage first) per docs/plans/cursor-merge-and-ship-plan.md §6.
-Branch from main after PR #2 merge.
+Implement Cursor useful tools (generateImage first) per docs/plans/cursor-useful-tools-plan.md.
+Branch from main.
 ```
 
 ---

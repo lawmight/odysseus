@@ -1,9 +1,9 @@
 # Plan C: Cursor Chat BYOK — polished parity with other providers
 
-**Status:** Canonical product plan (supersedes Plan A as the *goal* document)  
+**Status:** Shipped on `main` @ `3a1b985` (PR #2, 2026-06-02)  
 **Target repo:** Odysseus (self-hosted AI workspace)  
-**Related:** Plan A (adapter design), Plan B (Agent tab — deferred), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)  
-**Implementation reference:** branch `cursor/cursor-chat-provider-e76a` (PR #2)
+**Related:** Plan A (adapter design), Plan B (Agent tab — deferred), Plan C+ ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)  
+**Implementation reference:** merged via PR #2 → `main` (`3a1b985`)
 
 ---
 

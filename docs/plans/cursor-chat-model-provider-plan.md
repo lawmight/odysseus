@@ -1,6 +1,6 @@
 # Plan A: Cursor as Chat Model Provider (Odysseus)
 
-**Status:** Design / pre-implementation  
+**Status:** Shipped on `main` @ `3a1b985` (PR #2, 2026-06-02)  
 **Target repo:** Odysseus (self-hosted AI workspace)  
 **Verified against:** Odysseus workspace `@ workspace` (2026-06-01), Cursor docs via Nia (`abe7140b`, `71741e4c`), PyPI `cursor-sdk==0.1.6`
 
