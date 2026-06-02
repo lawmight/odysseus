@@ -36,6 +36,18 @@ def _first_chat_model(models) -> Optional[str]:
     return (models[0] if models else None)
 
 
+def _endpoint_cached_models(ep) -> list:
+    """Return cached model ids from the current or legacy endpoint field."""
+    raw = getattr(ep, "cached_models", None) or getattr(ep, "models", None)
+    if not raw:
+        return []
+    try:
+        models = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return []
+    return models if isinstance(models, list) else []
+
+
 # Cache for Tailscale hostname → IP resolution
 _tailscale_cache: Dict[str, Optional[str]] = {}
 
@@ -102,6 +114,9 @@ def normalize_base(url: str) -> str:
     for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages"]:
         if url.endswith(suffix):
             url = url[: -len(suffix)].rstrip("/")
+    for suffix in ["/chat", "/tags", "/generate"]:
+        if url.endswith("/api" + suffix):
+            url = url[: -len(suffix)].rstrip("/")
     return url
 
 
@@ -114,6 +129,20 @@ def _anthropic_api_root(base: str) -> str:
     return base
 
 
+def _ollama_api_root(base: str) -> str:
+    """Return the native Ollama API root, adding /api for ollama.com hosts."""
+    base = (base or "").strip().rstrip("/")
+    parsed = urlparse(base)
+    host = parsed.hostname or ""
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/api"):
+        return base
+    if host.endswith("ollama.com"):
+        root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else "https://ollama.com"
+        return root.rstrip("/") + "/api"
+    return base
+
+
 def build_chat_url(base: str) -> str:
     """Return the correct chat endpoint URL for a given base."""
     if is_cursor_url(base):
@@ -123,7 +152,21 @@ def build_chat_url(base: str) -> str:
     host = urlparse(base).hostname or ""
     if provider == "anthropic" or host.endswith("anthropic.com"):
         return _anthropic_api_root(base) + "/v1/messages"
+    if provider == "ollama" or host.endswith("ollama.com"):
+        return _ollama_api_root(base) + "/chat"
     return base + "/chat/completions"
+
+
+def build_models_url(base: str) -> str:
+    """Return the provider-specific model-list endpoint URL for a base."""
+    base = resolve_url(base)
+    provider = _detect_provider(base)
+    host = urlparse(base).hostname or ""
+    if provider == "anthropic" or host.endswith("anthropic.com"):
+        return _anthropic_api_root(base) + "/v1/models"
+    if provider == "ollama" or host.endswith("ollama.com"):
+        return _ollama_api_root(base) + "/tags"
+    return base + "/models"
 
 
 def build_headers(api_key: Optional[str], base: str, provider_config: Optional[str] = None) -> Dict[str, str]:
@@ -133,12 +176,18 @@ def build_headers(api_key: Optional[str], base: str, provider_config: Optional[s
     if is_cursor_url(base):
         return cursor_headers(api_key, provider_config)
     provider = _detect_provider(base)
+    headers: Dict[str, str] = {}
     if provider == "anthropic":
-        return {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        }
-    return {"Authorization": f"Bearer {api_key}"}
+        if api_key:
+            headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        return headers
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "openrouter":
+        headers.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
+        headers.setdefault("X-OpenRouter-Title", "Odysseus")
+    return headers
 
 
 def resolve_endpoint(
@@ -207,15 +256,9 @@ def resolve_endpoint(
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
 
-        # If no model specified, try to pick the first from endpoint's cached list
-        cached = getattr(ep, "cached_models", None) or getattr(ep, "models", None)
-        if not model and cached:
-            try:
-                models = json.loads(cached) if isinstance(cached, str) else cached
-                if models:
-                    model = _first_chat_model(models)
-            except Exception:
-                pass
+        # If no model specified, try to pick the first from endpoint's cached list.
+        if not model:
+            model = _first_chat_model(_endpoint_cached_models(ep)) or ""
 
         return chat_url, model or fallback_model, headers
     except Exception as e:
@@ -248,14 +291,8 @@ def resolve_endpoint_by_id(
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
         m = (model or "").strip()
-        cached = getattr(ep, "cached_models", None) or getattr(ep, "models", None)
-        if not m and cached:
-            try:
-                models = json.loads(cached) if isinstance(cached, str) else cached
-                if models:
-                    m = _first_chat_model(models) or ""
-            except Exception:
-                pass
+        if not m:
+            m = _first_chat_model(_endpoint_cached_models(ep)) or ""
         if not m:
             return None
         return chat_url, m, headers

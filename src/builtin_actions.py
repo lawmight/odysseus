@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Tuple
 
 from src.auth_helpers import owner_filter
+from core.platform_compat import IS_WINDOWS, find_bash
 
 logger = logging.getLogger(__name__)
 
@@ -77,18 +78,14 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
         manager = MemoryManager(DATA_DIR)
         all_memories = manager.load_all()
 
-        # When the scheduled task was created without an explicit owner
-        # (the common case for built-in housekeeping rows), task.owner
-        # arrives as "" or None. The old filter then required memories
-        # with a matching empty owner — which excluded every real memory
-        # and the action no-op'd with "nothing to consolidate" even
-        # though hundreds of memories were sitting there. Treat empty
-        # owner as "no filter" so the housekeeping action actually runs.
+        # Empty owner means "all owners" for built-in housekeeping, but never
+        # mix owners in the same AI prompt/apply step. A specific owner is
+        # scoped strictly to that owner; unowned rows are their own group.
         _owner_clean = (owner or "").strip()
         if _owner_clean:
             def _belongs_to_owner(mem: dict) -> bool:
                 mem_owner = (mem.get("owner") or "").strip()
-                return mem_owner == _owner_clean or not mem_owner
+                return mem_owner == _owner_clean
         else:
             def _belongs_to_owner(mem: dict) -> bool:
                 return True
@@ -97,21 +94,27 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
         if not owner_memories:
             raise TaskNoop("no memories to consolidate")
 
+        memory_owners = {(m.get("owner") or "").strip() for m in owner_memories}
+        allow_ai_tidy = len(memory_owners) <= 1
+
         url, model, headers = resolve_endpoint("utility", owner=owner)
         if not url or not model:
             url, model, headers = resolve_endpoint("default", owner=owner)
 
-        if url and model and len(owner_memories) >= 2:
+        if url and model and allow_ai_tidy and len(owner_memories) >= 2:
             try:
+                text_limit = 2000
                 items = [
                     {
                         "id": m.get("id"),
                         "category": m.get("category", "fact"),
-                        "text": (m.get("text") or "").strip()[:600],
+                        "text": (m.get("text") or "").strip()[:text_limit],
+                        "truncated": len((m.get("text") or "").strip()) > text_limit,
                     }
                     for m in owner_memories
                     if m.get("id") and (m.get("text") or "").strip()
                 ]
+                truncated_ids = {item["id"] for item in items if item.get("truncated")}
                 prompt = (
                     "You are tidying a user's saved personal memories. Return ONLY raw JSON, no markdown.\n"
                     "Remove memories that are empty, broken, trivial conversation filler, duplicates, or obsolete "
@@ -160,6 +163,9 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
                                 "text": text,
                                 "category": (item.get("category") or by_id[mid].get("category") or "fact").strip(),
                             }
+                        # If the model only saw a truncated memory, do not let
+                        # that partial view delete or rewrite the full memory.
+                        keep_ids.update(mid for mid in truncated_ids if mid in by_id)
 
                         if keep_ids:
                             changed_text = 0
@@ -172,6 +178,8 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
                                 if mid not in keep_ids:
                                     continue
                                 cleaned = cleaned_by_id.get(mid) or {}
+                                if mid in truncated_ids:
+                                    cleaned.pop("text", None)
                                 if cleaned.get("text") and cleaned["text"] != mem.get("text"):
                                     mem["text"] = cleaned["text"]
                                     changed_text += 1
@@ -207,10 +215,12 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
         removed_examples = []
         for mem in owner_memories:
             text = (mem.get("text") or "").strip()
-            key = " ".join(text.lower().split())
-            if not key:
+            normalized = " ".join(text.lower().split())
+            if not normalized:
                 removed_examples.append("(empty)")
                 continue
+            mem_owner = (mem.get("owner") or "").strip()
+            key = (mem_owner, normalized)
             if key in seen:
                 if len(removed_examples) < 3:
                     removed_examples.append(text[:60] + ("..." if len(text) > 60 else ""))
@@ -266,6 +276,11 @@ async def action_ssh_command(owner: str, command: str = "", host: str = "localho
     if not command:
         return "No command specified", False
     if host in ("localhost", "127.0.0.1", "local"):
+        if IS_WINDOWS:
+            bash = find_bash()
+            if bash:
+                return await _run_subprocess([bash, "-c", command], timeout=120, label="Command")
+            return await _run_subprocess(command, shell=True, timeout=120, label="Command")
         return await _run_subprocess(["bash", "-c", command], timeout=120, label="Command")
     return await _run_subprocess(
         ["ssh", "-o", "ConnectTimeout=10", host, command], timeout=120, label="Command",
@@ -278,6 +293,8 @@ async def action_run_script(owner: str, script: str = "", host: str = "", **kwar
         return "No script specified", False
     target_host = (host or os.getenv("ODYSSEUS_SCRIPT_HOST", "localhost")).strip()
     if target_host in ("", "localhost", "127.0.0.1", "local"):
+        if IS_WINDOWS and find_bash():
+            return await _run_subprocess([find_bash(), "-c", script], timeout=300, label="Script")
         return await _run_subprocess(script, shell=True, timeout=300, label="Script")
     return await _run_subprocess(["ssh", target_host, script], timeout=300, label="Script")
 
@@ -286,6 +303,8 @@ async def action_run_local(owner: str, script: str = "", **kwargs) -> Tuple[str,
     """Run a script locally (no SSH)."""
     if not script:
         return "No script specified", False
+    if IS_WINDOWS and find_bash():
+        return await _run_subprocess([find_bash(), "-c", script], timeout=300, label="Script")
     return await _run_subprocess(script, shell=True, timeout=300, label="Script")
 
 
@@ -459,7 +478,12 @@ async def action_draft_email_replies(owner: str, **kwargs) -> Tuple[str, bool]:
     """Run one pass of AI reply drafting."""
     try:
         from routes.email_pollers import _run_auto_summarize_once
-        result = await _run_auto_summarize_once(do_summary=False, do_reply=True)
+        result = await _run_auto_summarize_once(
+            do_summary=False,
+            do_reply=True,
+            days_back=7,
+            progress_cb=kwargs.get("progress_cb"),
+        )
         if not _result_has_work(result):
             raise TaskNoop(f"draft replies: {result or 'no new emails'}")
         return result, True
