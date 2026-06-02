@@ -13,7 +13,13 @@ from urllib.parse import urlparse, urlunparse
 
 from src.database import SessionLocal, ModelEndpoint
 from src.llm_core import _detect_provider
-from src.providers.cursor_adapter import CURSOR_LOCAL_URL, cursor_headers, is_cursor_url
+from src.providers.cursor_adapter import (
+    CURSOR_LOCAL_URL,
+    cached_model_ids,
+    cursor_headers,
+    is_cursor_url,
+    normalize_cached_cursor_models,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +34,20 @@ _NON_CHAT_MODEL = (
 )
 
 
+def _model_id_from_cached(m) -> str:
+    if isinstance(m, dict):
+        return str(m.get("id") or m.get("model") or "")
+    return str(m or "")
+
+
 def _first_chat_model(models) -> Optional[str]:
     """First model that isn't an embedding/tts/etc.; falls back to models[0]."""
     for m in (models or []):
-        if not any(p in str(m).lower() for p in _NON_CHAT_MODEL):
-            return m
-    return (models[0] if models else None)
+        mid = _model_id_from_cached(m)
+        if mid and not any(p in mid.lower() for p in _NON_CHAT_MODEL):
+            return mid
+    raw = models or []
+    return _model_id_from_cached(raw[0]) if raw else None
 
 
 def _endpoint_cached_models(ep) -> list:
@@ -45,7 +59,11 @@ def _endpoint_cached_models(ep) -> list:
         models = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
         return []
-    return models if isinstance(models, list) else []
+    if not isinstance(models, list):
+        return []
+    if (getattr(ep, "provider", "") or "").strip() == "cursor":
+        return normalize_cached_cursor_models(models)
+    return models
 
 
 # Cache for Tailscale hostname → IP resolution
@@ -252,6 +270,8 @@ def resolve_endpoint(
             return fallback_url, fallback_model, fallback_headers
 
         ep_provider = (getattr(ep, "provider", "") or "").strip()
+        if ep_provider == "cursor" and setting_prefix in ("utility", "task", "research", "vision"):
+            return fallback_url, fallback_model, fallback_headers
         base = CURSOR_LOCAL_URL if ep_provider == "cursor" else normalize_base(ep.base_url)
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
@@ -322,15 +342,20 @@ def resolve_utility_fallback_candidates(owner: Optional[str] = None) -> list:
             return _resolve_fallback_candidates("default_model_fallbacks", owner=owner)
     except Exception:
         pass
-    return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner)
+    return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner, exclude_cursor=True)
 
 
 def resolve_vision_fallback_candidates() -> list:
     """Configured fallback chain for the Vision model (`vision_model_fallbacks`)."""
-    return _resolve_fallback_candidates("vision_model_fallbacks")
+    return _resolve_fallback_candidates("vision_model_fallbacks", exclude_cursor=True)
 
 
-def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) -> list:
+def _resolve_fallback_candidates(
+    setting_key: str,
+    owner: Optional[str] = None,
+    *,
+    exclude_cursor: bool = False,
+) -> list:
     out = []
     try:
         from src.settings import get_user_setting, load_settings
@@ -341,7 +366,16 @@ def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) 
     for entry in chain:
         if not isinstance(entry, dict):
             continue
-        resolved = resolve_endpoint_by_id(entry.get("endpoint_id", ""), entry.get("model", ""))
+        ep_id = (entry.get("endpoint_id") or "").strip()
+        if exclude_cursor and ep_id:
+            db = SessionLocal()
+            try:
+                ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
+                if ep and (getattr(ep, "provider", "") or "").strip() == "cursor":
+                    continue
+            finally:
+                db.close()
+        resolved = resolve_endpoint_by_id(ep_id, entry.get("model", ""))
         if resolved:
             out.append(resolved)
     return out

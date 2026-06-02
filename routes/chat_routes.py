@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from core.models import ChatMessage
 from src.request_models import ChatRequest
-from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback
+from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback, _detect_provider
 from src.agent_loop import stream_agent_loop
 from src import agent_runs
 from src.model_context import estimate_tokens
@@ -691,6 +691,13 @@ def setup_chat_routes(
                 # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                 try:
                     _chat_candidates = [(sess.endpoint_url, sess.model, sess.headers)] + _fallback_candidates
+                    _cursor_meta = None
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        _cursor_meta = {
+                            "session_id": session,
+                            "agent_id": session_manager.get_cursor_agent_id(session),
+                            "session_manager": session_manager,
+                        }
                     async for chunk in stream_llm_with_fallback(
                         _chat_candidates,
                         messages,
@@ -703,6 +710,7 @@ def setup_chat_routes(
                         max_tokens=ctx.preset.max_tokens,
                         prompt_type=preset_id,
                         tools=None,
+                        cursor_meta=_cursor_meta,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -779,6 +787,18 @@ def setup_chat_routes(
                     _active_streams.pop(session, None)
             else:
                 # ── Agent mode: full agent loop with tools ──
+                if _detect_provider(sess.endpoint_url) == "cursor":
+                    yield (
+                        'event: error\ndata: '
+                        + json.dumps({
+                            "status": 400,
+                            "text": "Cursor endpoints are for Chat only. Switch to Chat mode or pick an OpenAI-compatible endpoint for Agent.",
+                            "error": "Cursor endpoints are for Chat only.",
+                        })
+                        + "\n\n"
+                    )
+                    _active_streams.pop(session, None)
+                    return
                 _agent_rounds = 0
                 _agent_tool_calls = 0
                 try:
@@ -910,7 +930,9 @@ def setup_chat_routes(
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
         stopped = agent_runs.stop(session_id)
-        return {"stopped": stopped}
+        from src.providers.cursor_adapter import cancel_cursor_run
+        cursor_stopped = await cancel_cursor_run(session_id)
+        return {"stopped": stopped or cursor_stopped}
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session

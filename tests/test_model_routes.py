@@ -436,6 +436,8 @@ def cursor_route_env(monkeypatch, tmp_path):
     monkeypatch.setattr(model_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(model_routes, "_load_settings", lambda: {})
     monkeypatch.setattr(model_routes, "_save_settings", lambda settings: None)
+    _entries = [{"id": "composer-2.5", "displayName": "Composer 2.5"}]
+    monkeypatch.setattr(model_routes, "list_cursor_model_entries", lambda api_key, timeout=5: list(_entries))
     monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=5: ["composer-2.5"])
     return rows, str(tmp_path)
 
@@ -498,6 +500,7 @@ def test_create_cursor_endpoint_propagates_cursor_error(monkeypatch, cursor_rout
     def fail(api_key, timeout=5):
         raise CursorAdapterError("bad key", status=401)
 
+    monkeypatch.setattr(model_routes, "list_cursor_model_entries", fail)
     monkeypatch.setattr(model_routes, "list_cursor_models", fail)
     create = _model_endpoint_route("/api/model-endpoints", "POST")
 

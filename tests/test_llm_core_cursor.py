@@ -30,11 +30,12 @@ def test_cursor_model_list_accepts_stringified_headers(monkeypatch):
 async def test_cursor_stream_accepts_stringified_headers(monkeypatch):
     seen = {}
 
-    async def fake_stream_cursor_chat(model, messages, api_key, cwd=None):
+    async def fake_stream_cursor_chat(model, messages, api_key, cwd=None, **kwargs):
         seen["model"] = model
         seen["messages"] = messages
         seen["api_key"] = api_key
         seen["cwd"] = cwd
+        seen["kwargs"] = kwargs
         yield "data: [DONE]\n\n"
 
     monkeypatch.setattr(cursor_adapter, "stream_cursor_chat", fake_stream_cursor_chat)

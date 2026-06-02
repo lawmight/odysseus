@@ -104,6 +104,7 @@ class SessionManager:
             is_important=getattr(db_session, "is_important", False) or False,
         )
         session.message_count = getattr(db_session, "message_count", 0) or 0
+        session.cursor_agent_id = getattr(db_session, "cursor_agent_id", None)
         return session
 
     def _db_to_session(self, db_session: DbSession, db) -> Optional[Session]:
@@ -163,7 +164,37 @@ class SessionManager:
         )
 
         session.message_count = getattr(db_session, 'message_count', len(history))
+        session.cursor_agent_id = getattr(db_session, "cursor_agent_id", None)
         return session
+
+    def set_cursor_agent_id(self, session_id: str, agent_id: str | None) -> None:
+        """Persist Cursor SDK agent id for Chat resume."""
+        agent_id = (agent_id or "").strip() or None
+        session = self.sessions.get(session_id)
+        if session is not None:
+            session.cursor_agent_id = agent_id
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if row:
+                row.cursor_agent_id = agent_id
+                db.commit()
+        except Exception as e:
+            logger.error(f"Failed to save cursor_agent_id for {session_id}: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    def get_cursor_agent_id(self, session_id: str) -> str | None:
+        session = self.get_session(session_id)
+        if session and getattr(session, "cursor_agent_id", None):
+            return session.cursor_agent_id
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession).filter(DbSession.id == session_id).first()
+            return getattr(row, "cursor_agent_id", None) if row else None
+        finally:
+            db.close()
 
     # ------------------------------------------------------------------
     # Message operations

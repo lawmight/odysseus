@@ -638,6 +638,7 @@ function initEndpointForm() {
   const provider = el('adm-epProvider');
   const urlInput = el('adm-epUrl');
   const cursorRow = el('adm-epCursorRow');
+  const cursorHelp = el('adm-epCursorHelp');
   const cursorCwd = el('adm-epCursorCwd');
 
   // Custom provider picker — mirrors the (now hidden) <select id="adm-epProvider">
@@ -692,6 +693,7 @@ function initEndpointForm() {
     if (provider.value) urlInput.value = provider.value;
     else urlInput.value = '';
     if (cursorRow) cursorRow.classList.toggle('hidden', !isCursor);
+    if (cursorHelp) cursorHelp.classList.toggle('hidden', !isCursor);
     if (isCursor) {
       urlInput.style.display = 'none';
       const epType = el('adm-epType');

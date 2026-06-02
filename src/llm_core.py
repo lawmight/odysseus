@@ -773,7 +773,7 @@ async def llm_call_async(
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
-                     tools: Optional[List[Dict]] = None):
+                     tools: Optional[List[Dict]] = None, **kwargs):
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
@@ -784,11 +784,36 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     """
     provider = _detect_provider(url)
     if provider == "cursor":
-        from src.providers.cursor_adapter import extract_cursor_api_key, extract_cursor_cwd, stream_cursor_chat
+        from src.providers.cursor_adapter import (
+            extract_cursor_api_key,
+            extract_cursor_cwd,
+            stream_cursor_chat,
+        )
         normalized_headers = _normalize_headers(headers)
         api_key = extract_cursor_api_key(normalized_headers)
         cwd = extract_cursor_cwd(normalized_headers)
-        async for chunk in stream_cursor_chat(model, messages, api_key=api_key, cwd=cwd):
+        cursor_meta = kwargs.pop("cursor_meta", None) or {}
+        cursor_agent_id = cursor_meta.get("agent_id")
+        odysseus_session_id = cursor_meta.get("session_id")
+        async for chunk in stream_cursor_chat(
+            model,
+            messages,
+            api_key=api_key,
+            cwd=cwd,
+            cursor_agent_id=cursor_agent_id,
+            odysseus_session_id=odysseus_session_id,
+        ):
+            if chunk.startswith("data: ") and '"type": "cursor_agent_id"' in chunk:
+                try:
+                    payload = json.loads(chunk[6:].strip())
+                    new_id = payload.get("agent_id")
+                    if new_id and cursor_meta.get("session_id"):
+                        cursor_meta["agent_id"] = new_id
+                        mgr = cursor_meta.get("session_manager")
+                        if mgr is not None:
+                            mgr.set_cursor_agent_id(cursor_meta["session_id"], new_id)
+                except Exception:
+                    pass
             yield chunk
         return
 

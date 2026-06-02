@@ -266,7 +266,9 @@ Admins can add **Cursor (local)** in **Settings -> Model Endpoints**. Install th
 pip install -r requirements-cursor.txt
 ```
 
-Paste a Cursor API key, choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from Chat. Cursor support is for Chat mode only; the Agent tab still uses Odysseus tools and OpenAI-compatible/Anthropic endpoints.
+Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat**.
+
+Cursor endpoints are **Chat-only** (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the Docker app container unless you install the SDK there too). Multi-turn Chat reuses a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Agent** mode, utility/vision background tasks, and Compare still require OpenAI-compatible or Anthropic endpoints — see `docs/plans/cursor-agent-tab-integration-plan.md` for future Agent-tab support.
 
 ## Architecture
 ```

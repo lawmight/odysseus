@@ -21,9 +21,12 @@ from src.auth_helpers import owner_filter
 from src.providers.cursor_adapter import (
     CURSOR_LOCAL_URL,
     CursorAdapterError,
+    cached_model_ids,
     cursor_provider_config,
     is_cursor_url,
+    list_cursor_model_entries,
     list_cursor_models,
+    normalize_cached_cursor_models,
     parse_provider_config,
     validate_cursor_cwd,
 )
@@ -991,7 +994,12 @@ def setup_model_routes(model_discovery):
                 all_models = []
                 if r.cached_models:
                     try:
-                        all_models = json.loads(r.cached_models)
+                        raw = json.loads(r.cached_models)
+                        prov = _normalize_provider(getattr(r, "provider", None), r.base_url)
+                        if prov == "cursor":
+                            all_models = normalize_cached_cursor_models(raw)
+                        else:
+                            all_models = raw if isinstance(raw, list) else []
                     except Exception:
                         pass
                 hidden = set()
@@ -1000,7 +1008,16 @@ def setup_model_routes(model_discovery):
                         hidden = set(json.loads(r.hidden_models))
                     except Exception:
                         pass
-                visible = [m for m in all_models if m not in hidden]
+
+                def _entry_id(m):
+                    return m.get("id") if isinstance(m, dict) else str(m)
+
+                visible = [m for m in all_models if _entry_id(m) not in hidden]
+                visible_ids = [_entry_id(m) for m in visible]
+                models_display = [
+                    (m.get("displayName") if isinstance(m, dict) else str(m))
+                    for m in visible
+                ]
                 status = "online" if all_models else "offline"
                 ping = None
                 if not all_models and r.is_enabled:
@@ -1013,7 +1030,8 @@ def setup_model_routes(model_discovery):
                     "base_url": r.base_url,
                     "has_key": bool(r.api_key),
                     "is_enabled": r.is_enabled,
-                    "models": visible,
+                    "models": visible_ids,
+                    "models_display": models_display,
                     "hidden_count": len(hidden),
                     "online": status != "offline",
                     "status": status,
@@ -1117,9 +1135,11 @@ def setup_model_routes(model_discovery):
 
         # Quick model list fetch (1s timeout — if endpoint is slow, it'll update on next refresh)
         ping = {"reachable": False, "error": None}
+        entries: List[Dict[str, str]] = []
         if endpoint_provider == "cursor":
             try:
-                model_ids = list_cursor_models(api_key.strip(), timeout=5) if should_probe else []
+                entries = list_cursor_model_entries(api_key.strip(), timeout=5) if should_probe else []
+                model_ids = [e["id"] for e in entries]
             except CursorAdapterError as e:
                 raise HTTPException(e.status, str(e))
         else:
@@ -1149,7 +1169,8 @@ def setup_model_routes(model_discovery):
                 api_key=api_key.strip() or None,
                 is_enabled=True,
                 model_type=normalized_model_type,
-                cached_models=json.dumps(model_ids) if model_ids else None,
+                cached_models=json.dumps(entries if endpoint_provider == "cursor" else model_ids)
+                if (entries if endpoint_provider == "cursor" else model_ids) else None,
                 supports_tools=False if endpoint_provider == "cursor" else _st,
                 owner=_owner_val,
                 provider=endpoint_provider,
