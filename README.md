@@ -311,6 +311,7 @@ Key settings:
 | `CHROMADB_HOST` | `localhost` | ChromaDB host for vector memory. Docker overrides this to `chromadb`. |
 | `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs. Docker overrides this to `8000`. |
 | `EMBEDDING_URL` | -- | OpenAI-compatible embeddings endpoint |
+| `CURSOR_ALLOWED_WORKSPACE_ROOTS` | current working directory | `:`-separated directories that Cursor local endpoints may use as bridge workspaces. |
 
 ### Built-in MCP servers (optional setup)
 
@@ -323,6 +324,17 @@ npx -y @playwright/mcp@latest --version
 ```
 
 That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
+
+### Cursor as a chat provider
+Admins can add **Cursor (local)** in **Settings -> Model Endpoints**. Install the optional SDK on the Odysseus host first:
+
+```bash
+pip install -r requirements-cursor.txt
+```
+
+Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat**.
+
+Cursor endpoints are **Chat-only** (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the Docker app container unless you install the SDK there too). Multi-turn Chat reuses a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Agent** mode, utility/vision background tasks, and Compare still require OpenAI-compatible or Anthropic endpoints — see `docs/plans/cursor-agent-tab-integration-plan.md` for future Agent-tab support.
 
 ## Architecture
 ```

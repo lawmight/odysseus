@@ -229,6 +229,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         # Set auth headers for custom API-key endpoints
         resolved_key = api_key.strip() if api_key else ""
         resolved_base = endpoint_url
+        provider_config = None
         if not resolved_key and endpoint_id and endpoint_id.strip():
             from core.database import ModelEndpoint
             _db = SessionLocal()
@@ -237,11 +238,14 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 if ep and ep.api_key:
                     resolved_key = ep.api_key
                     resolved_base = ep.base_url
+                    provider_config = getattr(ep, "provider_config", None)
             finally:
                 _db.close()
         if resolved_key:
             from src.endpoint_resolver import build_headers
-            session.headers = build_headers(resolved_key, resolved_base)
+            session.headers = build_headers(resolved_key, resolved_base, provider_config)
+            session_manager.save_sessions()
+        elif session.headers:
             session_manager.save_sessions()
         # Fire webhook (sync-safe)
         if webhook_manager:
@@ -306,7 +310,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                     ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
                     if ep and ep.api_key:
                         from src.endpoint_resolver import build_headers
-                        session.headers = build_headers(ep.api_key, ep.base_url)
+                        session.headers = build_headers(ep.api_key, ep.base_url, getattr(ep, "provider_config", None))
                 finally:
                     _db.close()
             # Persist to DB

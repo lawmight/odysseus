@@ -32,3 +32,15 @@ if "src.database" not in sys.modules:
     _db.SessionLocal = MagicMock()
     _db.ModelEndpoint = MagicMock()
     sys.modules["src.database"] = _db
+
+# Several route tests stub `core.database` at import time with a bare
+# ModuleType that lacks ORM symbols. Preload the real module when SQLAlchemy
+# is installed so later tests (e.g. task scheduler delivery) can import Base.
+if _has_module("sqlalchemy"):
+    import importlib
+    if "core.atomic_io" not in sys.modules:
+        importlib.import_module("core.atomic_io")
+    if "core.database" not in sys.modules:
+        importlib.import_module("core.database")
+    if "core.auth" not in sys.modules:
+        importlib.import_module("core.auth")

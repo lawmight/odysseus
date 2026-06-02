@@ -223,7 +223,7 @@ def try_fallback_endpoint(sess, session_id: str) -> dict | None:
             # Found a working endpoint — update session
             new_model = models[0]
             chat_url = build_chat_url(base)
-            new_headers = build_headers(ep.api_key, base)
+            new_headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
 
             sess.model = new_model
             sess.endpoint_url = chat_url
@@ -322,7 +322,7 @@ def resolve_session_auth(sess, session_id: str):
             if domain:
                 ep = db.query(ModelEndpoint).filter(ModelEndpoint.base_url.contains(domain)).first()
                 if ep and ep.api_key:
-                    sess.headers = build_headers(ep.api_key, ep.base_url)
+                    sess.headers = build_headers(ep.api_key, ep.base_url, getattr(ep, "provider_config", None))
                     db.query(DBSession).filter(DBSession.id == session_id).update(
                         {"headers": json.dumps(sess.headers)}
                     )

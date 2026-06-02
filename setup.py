@@ -27,6 +27,10 @@ DIRS = [
 ]
 
 
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def create_dirs():
     for d in DIRS:
         os.makedirs(d, exist_ok=True)
@@ -83,7 +87,8 @@ def create_default_admin():
 
         # Priority: env vars > interactive prompt > random password
         username = os.getenv("ODYSSEUS_ADMIN_USER", "").strip().lower()
-        password = os.getenv("ODYSSEUS_ADMIN_PASSWORD", "").strip()
+        password_env = os.getenv("ODYSSEUS_ADMIN_PASSWORD")
+        password = (password_env or "").strip()
 
         if username and password:
             # Both provided via env — use them directly
@@ -109,13 +114,19 @@ def create_default_admin():
         with open(auth_path, "w", encoding="utf-8") as f:
             json.dump(auth_data, f, indent=2)
 
-        if sys.stdin.isatty() and not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+        if sys.stdin.isatty() and not password_env and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
             print(f"  [ok] Admin account created ({username})")
         else:
             print(f"  [ok] Initial admin user created ({username})")
-            if not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+            password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
+            hide_password = bool(password_env) or _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG")
+            if hide_password and password_file:
+                print(f"        Temporary password saved at: {password_file}")
+            elif hide_password:
+                print("        Temporary password set via ODYSSEUS_ADMIN_PASSWORD (value not printed)")
+            elif not password_env:
                 print(f"        Temporary password: {password}")
-                print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
+            print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
         return "created"
     except ImportError:
         print("  [warn] bcrypt not installed — skipping admin user creation")
@@ -167,6 +178,17 @@ def check_deps():
         print("  [ok] tmux installed")
 
 
+def admin_password_hint():
+    password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
+    if password_file:
+        return f"Login with the admin username and the temporary password saved at {password_file}."
+    if os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+        return "Login with the admin username and your ODYSSEUS_ADMIN_PASSWORD value."
+    if _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG"):
+        return "Login with the admin username and the temporary password generated during setup."
+    return "Login with the admin username and temporary password printed above."
+
+
 def main():
     print("\n=== Odysseus Setup ===\n")
 
@@ -206,7 +228,12 @@ def main():
 
     # Cleaned, action-focused final instruction strings
     if admin_status == "created":
-        print("Login with your admin credentials.\n")
+        if sys.stdin.isatty() and not os.getenv("ODYSSEUS_ADMIN_PASSWORD") and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
+            print("Login with your admin credentials.\n")
+        elif not os.getenv("ODYSSEUS_SKIP_RUN_HINT"):
+            print(f"{admin_password_hint()}\n")
+        else:
+            print("Login with the admin username and temporary password printed above.\n")
     elif admin_status == "exists":
         print("Login with your existing admin credentials.\n")
     elif admin_status == "skipped":

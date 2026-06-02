@@ -717,10 +717,19 @@ def test_internal_tool_owner_header_logic_requires_known_user():
 
 def test_auth_manager_migrates_legacy_admin_role(tmp_path):
     """Old setup.py wrote role='admin'; startup must turn that into is_admin."""
+    import importlib
+
+    # Another test module may have stubbed core.atomic_io at import time; reload
+    # the real writer before AuthManager so _save() persists users correctly.
+    sys.modules.pop("core.atomic_io", None)
+    importlib.import_module("core.atomic_io")
     sys.modules.pop("core.auth", None)
     if "core" in sys.modules and hasattr(sys.modules["core"], "auth"):
         delattr(sys.modules["core"], "auth")
-    from core.auth import AuthManager
+    auth_mod = importlib.import_module("core.auth")
+    importlib.reload(auth_mod)
+    AuthManager = auth_mod.AuthManager
+    assert isinstance(AuthManager, type), "expected real AuthManager, got a test stub"
 
     auth_path = tmp_path / "auth.json"
     auth_path.write_text(json.dumps({

@@ -291,6 +291,8 @@ def _detect_provider(url: str) -> str:
     Unknown hosts fall back to the OpenAI-compatible default, which the
     majority of providers implement.
     """
+    if (url or "").strip().lower().startswith("cursor://"):
+        return "cursor"
     if _is_ollama_native_url(url):
         return "ollama"
     if _host_match(url, "anthropic.com"):
@@ -316,6 +318,8 @@ def _provider_label(url: str) -> str:
     """Human-friendly provider name for error messages."""
     if not url:
         return "provider"
+    if (url or "").strip().lower().startswith("cursor://"):
+        return "Cursor"
     if _host_match(url, "anthropic.com"): return "Anthropic"
     if _host_match(url, "ollama.com"): return "Ollama Cloud"
     if _host_match(url, "x.ai"): return "xAI"
@@ -530,6 +534,16 @@ def _build_anthropic_headers(headers):
                 h[k] = v
     return h
 
+
+def _normalize_headers(headers):
+    if isinstance(headers, str):
+        try:
+            headers = json.loads(headers)
+        except Exception:
+            return None
+    return headers if isinstance(headers, dict) else None
+
+
 def _parse_anthropic_response(data: dict) -> str:
     """Extract text from Anthropic response."""
     for block in data.get("content", []):
@@ -585,6 +599,13 @@ def _normalize_anthropic_url(url: str) -> str:
 def list_model_ids(base_chat_url: str, timeout: int = LLMConfig.DEFAULT_TIMEOUT, headers: Optional[Dict] = None) -> List[str]:
     """List available model IDs from an endpoint."""
     provider = _detect_provider(base_chat_url)
+    if provider == "cursor":
+        try:
+            from src.providers.cursor_adapter import extract_cursor_api_key, list_cursor_models
+            normalized_headers = _normalize_headers(headers)
+            return list_cursor_models(extract_cursor_api_key(normalized_headers), timeout=timeout)
+        except Exception:
+            return []
     if provider == "anthropic":
         return list(ANTHROPIC_MODELS)
     try:
@@ -853,7 +874,7 @@ async def llm_call_async(
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
-                     tools: Optional[List[Dict]] = None):
+                     tools: Optional[List[Dict]] = None, **kwargs):
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
@@ -863,6 +884,40 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - data: [DONE]                       — end of stream
     """
     provider = _detect_provider(url)
+    if provider == "cursor":
+        from src.providers.cursor_adapter import (
+            extract_cursor_api_key,
+            extract_cursor_cwd,
+            stream_cursor_chat,
+        )
+        normalized_headers = _normalize_headers(headers)
+        api_key = extract_cursor_api_key(normalized_headers)
+        cwd = extract_cursor_cwd(normalized_headers)
+        cursor_meta = kwargs.pop("cursor_meta", None) or {}
+        cursor_agent_id = cursor_meta.get("agent_id")
+        odysseus_session_id = cursor_meta.get("session_id")
+        async for chunk in stream_cursor_chat(
+            model,
+            messages,
+            api_key=api_key,
+            cwd=cwd,
+            cursor_agent_id=cursor_agent_id,
+            odysseus_session_id=odysseus_session_id,
+        ):
+            if chunk.startswith("data: ") and '"type": "cursor_agent_id"' in chunk:
+                try:
+                    payload = json.loads(chunk[6:].strip())
+                    new_id = payload.get("agent_id")
+                    if new_id and cursor_meta.get("session_id"):
+                        cursor_meta["agent_id"] = new_id
+                        mgr = cursor_meta.get("session_manager")
+                        if mgr is not None:
+                            mgr.set_cursor_agent_id(cursor_meta["session_id"], new_id)
+                except Exception:
+                    pass
+            yield chunk
+        return
+
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.

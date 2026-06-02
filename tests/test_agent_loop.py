@@ -1,17 +1,24 @@
 """Tests for agent_loop.py — _detect_admin_intent, _compute_final_metrics,
 and _append_tool_results. Uses mock imports to avoid loading the full app stack."""
 
+import importlib.util
 import sys
 from unittest.mock import MagicMock
 
-# Mock heavy dependencies before importing
-for mod in [
+# When SQLAlchemy is installed (normal dev/CI), keep the real ORM modules so
+# later tests can import core.database.Base. Only stub them when SQLAlchemy
+# is missing (conftest may have replaced it with MagicMock).
+_sqlalchemy_available = importlib.util.find_spec("sqlalchemy") is not None
+_mock_modules = [
     'sqlalchemy', 'sqlalchemy.orm', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
     'sqlalchemy.ext.hybrid', 'sqlalchemy.sql', 'sqlalchemy.sql.expression',
     'src.database',
     'src.agent_tools',
-    'core.models', 'core.database',
-]:
+]
+if not _sqlalchemy_available:
+    _mock_modules.extend(['core.models', 'core.database'])
+
+for mod in _mock_modules:
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 

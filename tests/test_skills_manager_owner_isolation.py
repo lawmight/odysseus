@@ -36,23 +36,25 @@ import pytest
 for _mod in [
     "sqlalchemy", "sqlalchemy.orm", "sqlalchemy.ext",
     "sqlalchemy.ext.declarative", "src.database",
-    "core.atomic_io",  # we'll patch atomic_write_text below
 ]:
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
 
-# Provide a no-op atomic_write_text for SkillsManager._write_skill.
+# Provide a no-op atomic_write_text for SkillsManager._write_skill. Only
+# install when the real module is not already loaded (conftest preloads it
+# for AuthManager and other persistence tests).
 def _fake_atomic_write_text(path, content, **kw):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(content, encoding="utf-8")
 
-_fake_core = types.ModuleType("core.atomic_io")
-_fake_core.atomic_write_text = _fake_atomic_write_text
-_fake_core.atomic_write_json = lambda p, d, **kw: Path(p).write_text(
-    "{}", encoding="utf-8"
-)
-sys.modules["core.atomic_io"] = _fake_core
+if "core.atomic_io" not in sys.modules:
+    _fake_core = types.ModuleType("core.atomic_io")
+    _fake_core.atomic_write_text = _fake_atomic_write_text
+    _fake_core.atomic_write_json = lambda p, d, **kw: Path(p).write_text(
+        "{}", encoding="utf-8"
+    )
+    sys.modules["core.atomic_io"] = _fake_core
 
 
 from services.memory.skills import SkillsManager  # noqa: E402
