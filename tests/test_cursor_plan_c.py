@@ -185,3 +185,29 @@ def test_resolve_endpoint_utility_skips_cursor(monkeypatch):
     )
     assert url == "http://fallback/v1"
     assert model == "fb-model"
+
+
+def test_resolve_task_rejects_cursor_session_fallback(monkeypatch):
+    """Auto-name must not fall back to cursor:// over HTTP."""
+    import importlib
+    import src.endpoint_resolver as er
+    import src.settings as settings_mod
+
+    importlib.reload(settings_mod)
+    settings = {}
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: dict(settings))
+    monkeypatch.setattr(
+        settings_mod,
+        "get_user_setting",
+        lambda key, owner, default=None: settings.get(key, default if default is not None else ""),
+    )
+
+    url, model, headers = er.resolve_endpoint(
+        "task",
+        fallback_url="cursor://local",
+        fallback_model="composer-2.5",
+        fallback_headers={"Authorization": "Bearer key"},
+    )
+    assert url is None
+    assert model is None
+    assert headers is None

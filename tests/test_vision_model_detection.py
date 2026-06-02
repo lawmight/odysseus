@@ -5,7 +5,7 @@ names. If one isn't recognized as vision-capable, the image attachment is
 stripped from the request before it reaches the model, so it silently never
 sees the picture.
 """
-from src.chat_helpers import is_vision_model
+from src.chat_helpers import is_vision_model, chat_accepts_image_attachments
 
 
 def test_recognizes_local_and_hosted_vision_models():
@@ -28,3 +28,8 @@ def test_text_only_models_not_flagged():
 
 def test_none_is_safe():
     assert is_vision_model(None) is False
+
+
+def test_cursor_chat_endpoint_accepts_images_without_vision_keyword():
+    assert chat_accepts_image_attachments("composer-2.5", "cursor://local")
+    assert not chat_accepts_image_attachments("qwen2.5:3b", "http://localhost:11434/v1")

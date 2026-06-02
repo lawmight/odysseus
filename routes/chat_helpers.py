@@ -150,6 +150,9 @@ async def auto_name_session(session_manager, sess):
             sess.endpoint_url, sess.model, sess.headers,
         )
 
+        if not t_url or not t_model:
+            return
+
         # max_tokens big enough that reasoning models (Minimax M2,
         # DeepSeek R1, QwQ, etc.) have headroom for <think>…</think>
         # plus the actual title — 200 used to clip them mid-reasoning

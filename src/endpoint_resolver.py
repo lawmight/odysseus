@@ -23,6 +23,21 @@ from src.providers.cursor_adapter import (
 
 logger = logging.getLogger(__name__)
 
+_HTTP_ONLY_PREFIXES = frozenset({"utility", "task", "research", "vision"})
+
+
+def _http_safe_fallback(
+    setting_prefix: str,
+    fallback_url: Optional[str],
+    fallback_model: Optional[str],
+    fallback_headers: Optional[Dict],
+) -> Tuple[Optional[str], Optional[str], Optional[Dict]]:
+    """Background HTTP callers cannot POST to cursor:// — drop that fallback."""
+    if setting_prefix in _HTTP_ONLY_PREFIXES and is_cursor_url(fallback_url or ""):
+        return None, None, None
+    return fallback_url, fallback_model, fallback_headers
+
+
 # Model-name substrings that are NOT chat/generation models. When an endpoint
 # has no explicit model configured we pick the first CHAT model from its list —
 # never an embedding/tts/etc. (an OpenAI-style endpoint often lists
@@ -250,7 +265,7 @@ def resolve_endpoint(
         from src.settings import get_user_setting, load_settings
         settings = load_settings()
     except Exception:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     owner_str = owner or ""
     def _stg(key: str) -> str:
@@ -276,7 +291,7 @@ def resolve_endpoint(
             model = _stg("default_model")
 
     if not ep_id:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     db = SessionLocal()
     try:
@@ -290,11 +305,11 @@ def resolve_endpoint(
         else:
             ep = ep.first()
         if not ep:
-            return fallback_url, fallback_model, fallback_headers
+            return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
         ep_provider = (getattr(ep, "provider", "") or "").strip()
-        if ep_provider == "cursor" and setting_prefix in ("utility", "task", "research", "vision"):
-            return fallback_url, fallback_model, fallback_headers
+        if ep_provider == "cursor" and setting_prefix in _HTTP_ONLY_PREFIXES:
+            return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
         base = CURSOR_LOCAL_URL if ep_provider == "cursor" else normalize_base(ep.base_url)
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base, getattr(ep, "provider_config", None))
@@ -312,7 +327,7 @@ def resolve_endpoint(
         return chat_url, model or fallback_model, headers
     except Exception as e:
         logger.debug(f"Could not resolve {setting_prefix} endpoint: {e}")
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
     finally:
         db.close()
 
