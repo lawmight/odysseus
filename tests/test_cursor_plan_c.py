@@ -83,7 +83,9 @@ async def test_stream_cursor_chat_resume_path(monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def send(self, message):
+        async def send(self, message, options=None):
+            assert options is not None
+            assert options.get("model") == "composer-2.5"
             return FakeRun()
 
     agents_resource = SimpleNamespace(resume_called=False)

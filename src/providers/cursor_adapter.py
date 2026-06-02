@@ -456,7 +456,7 @@ async def stream_cursor_chat(
         async with agent:
             if not resume and getattr(agent, "agent_id", None):
                 yield cursor_agent_id_event(str(agent.agent_id))
-            run = await agent.send(payload)
+            run = await agent.send(payload, {"model": model})
             if odysseus_session_id:
                 await register_cursor_run(odysseus_session_id, run)
             async for event in run.messages():
