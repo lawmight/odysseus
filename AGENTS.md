@@ -194,6 +194,18 @@ uvicorn app:app --host 127.0.0.1 --port 7000
 
 Open `http://localhost:7000`. First boot: run `setup.py` or rely on `cloud-agent-install.sh`.
 
+### Port forwarding and VPN (Cloud Agent UI)
+
+Odysseus listens on port **7000**; [`.cursor/environment.json`](.cursor/environment.json) declares it for Cursor’s forwarder. The Cloud dev server binds **`0.0.0.0:7000`** (see `scripts/cloud-agent-services.sh dev-server`) so the tunnel can reconnect after client-side VPN or routing changes.
+
+If the browser shows **ERR_EMPTY_RESPONSE** or “connection was reset” on `http://127.0.0.1:7000/` after a VPN profile switch:
+
+1. Confirm the agent is running: `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7000/api/auth/status` on the VM (expect `200`).
+2. In Cursor, open the **plug** icon (port forwarding) on the agent tab → close stale **7000** forwards → forward **7000** again (or toggle auto-forward).
+3. Restart the dev server: `bash scripts/cloud-agent-services.sh dev-server` (or restart the `odysseus` terminal).
+
+Set `APP_BIND=127.0.0.1` only if you intentionally want loopback-only on the VM.
+
 ### Auth for local testing
 
 After `python setup.py`, credentials live in `data/auth.json`. Initial admin password is printed once on first create. Re-running setup skips user creation if `auth.json` exists.

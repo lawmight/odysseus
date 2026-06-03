@@ -53,7 +53,12 @@ case "$cmd" in
     export CHROMADB_HOST="${CHROMADB_HOST:-localhost}"
     export CHROMADB_PORT="${CHROMADB_PORT:-8100}"
     export SEARXNG_INSTANCE="${SEARXNG_INSTANCE:-http://127.0.0.1:8080}"
-    exec uvicorn app:app --host 127.0.0.1 --port 7000
+    # 0.0.0.0 on Cloud VMs helps Cursor port forwarding reattach after client VPN
+    # or routing changes (ERR_EMPTY_RESPONSE on localhost:7000). Override with
+    # APP_BIND=127.0.0.1 if you need loopback-only on a shared host.
+    _bind="${APP_BIND:-0.0.0.0}"
+    _port="${APP_PORT:-7000}"
+    exec uvicorn app:app --host "$_bind" --port "$_port"
     ;;
   *)
     echo "Usage: $0 {start|dev-server}" >&2
