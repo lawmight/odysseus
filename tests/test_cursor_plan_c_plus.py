@@ -183,6 +183,78 @@ async def test_stream_cursor_chat_forwards_tool_call_events(monkeypatch, tmp_pat
     assert '"image_url": "/api/generated-image/' in joined
 
 
+@pytest.mark.asyncio
+async def test_stream_heartbeat_does_not_cancel_slow_tool_completion(monkeypatch, tmp_path):
+    """Regression: asyncio.wait_for on __anext__ cancelled gRPC reads and dropped completed tool_call."""
+    import asyncio
+
+    monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
+    monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "0.05")
+    monkeypatch.setattr(cursor_adapter, "CURSOR_SDK_AVAILABLE", True)
+    monkeypatch.setattr(cursor_adapter, "validate_cursor_cwd", lambda cwd: str(tmp_path))
+
+    img = tmp_path / "delayed.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    class FakeRun:
+        async def messages(self):
+            yield SimpleNamespace(
+                type="tool_call",
+                name="generateImage",
+                status="running",
+                args={"prompt": "star"},
+            )
+            await asyncio.sleep(0.2)
+            yield SimpleNamespace(
+                type="tool_call",
+                name="generateImage",
+                status="completed",
+                args={"prompt": "star"},
+                result={"path": str(img)},
+            )
+
+        async def cancel(self):
+            return None
+
+    class FakeAgent:
+        agent_id = "agent-delay"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def send(self, message, options=None):
+            return FakeRun()
+
+    class FakeAgents:
+        async def create(self, **kwargs):
+            return FakeAgent()
+
+    class FakeClient:
+        agents = FakeAgents()
+
+    async def fake_bridge(_cwd):
+        return FakeClient()
+
+    monkeypatch.setattr(cursor_adapter, "_get_bridge_client", fake_bridge)
+
+    joined = "".join(
+        [
+            c
+            async for c in cursor_adapter.stream_cursor_chat(
+                "composer-2.5",
+                [{"role": "user", "content": "star"}],
+                api_key="cur-key",
+                cwd=str(tmp_path),
+            )
+        ]
+    )
+    assert ": heartbeat" in joined
+    assert '"image_url": "/api/generated-image/' in joined
+
+
 def test_chat_routes_blocks_cursor_in_agent_mode():
     """Regression: Agent + Cursor must stay Chat-only blocked."""
     import inspect

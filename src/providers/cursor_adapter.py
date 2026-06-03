@@ -696,54 +696,67 @@ async def stream_cursor_chat(
                 await register_cursor_run(odysseus_session_id, run)
             _msg_iter = run.messages().__aiter__()
             _heartbeat_s = float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
-            while True:
-                try:
-                    event = await asyncio.wait_for(_msg_iter.__anext__(), timeout=_heartbeat_s)
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-                    continue
-                except StopAsyncIteration:
-                    break
-                async with _active_cursor_runs_lock:
-                    entry = _active_cursor_runs.get(odysseus_session_id or "")
-                    if entry and entry.get("cancelled"):
+            # Do not use asyncio.wait_for on __anext__: timeout cancels the pending
+            # read and breaks the Cursor gRPC stream (generateImage never completes).
+            _pending_msg: asyncio.Task[Any] = asyncio.create_task(_msg_iter.__anext__())
+            try:
+                while True:
+                    _done, _ = await asyncio.wait({_pending_msg}, timeout=_heartbeat_s)
+                    if not _done:
+                        yield ": heartbeat\n\n"
+                        continue
+                    try:
+                        event = _pending_msg.result()
+                    except StopAsyncIteration:
                         break
-                event_type = str(_get_attr(event, "type", "") or "")
-                if event_type == "assistant":
-                    for block in _iter_content_blocks(event):
-                        if isinstance(block, str):
-                            text = block
-                        else:
-                            block_type = str(_get_attr(block, "type", "text") or "text")
-                            if block_type != "text":
-                                continue
-                            text = str(_get_attr(block, "text", "") or "")
+                    _pending_msg = asyncio.create_task(_msg_iter.__anext__())
+                    async with _active_cursor_runs_lock:
+                        entry = _active_cursor_runs.get(odysseus_session_id or "")
+                        if entry and entry.get("cancelled"):
+                            break
+                    event_type = str(_get_attr(event, "type", "") or "")
+                    if event_type == "assistant":
+                        for block in _iter_content_blocks(event):
+                            if isinstance(block, str):
+                                text = block
+                            else:
+                                block_type = str(_get_attr(block, "type", "text") or "text")
+                                if block_type != "text":
+                                    continue
+                                text = str(_get_attr(block, "text", "") or "")
+                            if text:
+                                yield f"data: {json.dumps({'delta': text})}\n\n"
+                    elif event_type == "thinking":
+                        text = str(_get_attr(event, "text", "") or _get_attr(event, "content", "") or "")
                         if text:
-                            yield f"data: {json.dumps({'delta': text})}\n\n"
-                elif event_type == "thinking":
-                    text = str(_get_attr(event, "text", "") or _get_attr(event, "content", "") or "")
-                    if text:
-                        yield f"data: {json.dumps({'delta': text, 'thinking': True})}\n\n"
-                elif event_type == "tool_call":
-                    _tc_name = str(_get_attr(event, "name", "") or "")
-                    _tc_status = str(_get_attr(event, "status", "") or "")
-                    logger.info(
-                        "Cursor tool_call name=%s status=%s session=%s",
-                        _tc_name,
-                        _tc_status,
-                        odysseus_session_id or "",
-                    )
-                    for chunk in cursor_tool_call_chunks(
-                        event,
-                        workspace=workspace,
-                        model=model,
-                        session_id=odysseus_session_id,
-                        owner=owner,
-                    ):
-                        yield chunk
-                elif event_type == "error":
-                    text = str(_get_attr(event, "message", "") or _get_attr(event, "error", "") or "Cursor run failed")
-                    raise CursorAdapterError(text, status=502)
+                            yield f"data: {json.dumps({'delta': text, 'thinking': True})}\n\n"
+                    elif event_type == "tool_call":
+                        _tc_name = str(_get_attr(event, "name", "") or "")
+                        _tc_status = str(_get_attr(event, "status", "") or "")
+                        logger.info(
+                            "Cursor tool_call name=%s status=%s session=%s",
+                            _tc_name,
+                            _tc_status,
+                            odysseus_session_id or "",
+                        )
+                        for chunk in cursor_tool_call_chunks(
+                            event,
+                            workspace=workspace,
+                            model=model,
+                            session_id=odysseus_session_id,
+                            owner=owner,
+                        ):
+                            yield chunk
+                    elif event_type == "error":
+                        text = str(_get_attr(event, "message", "") or _get_attr(event, "error", "") or "Cursor run failed")
+                        raise CursorAdapterError(text, status=502)
+            finally:
+                if not _pending_msg.done():
+                    _pending_msg.cancel()
+                    try:
+                        await _pending_msg
+                    except (asyncio.CancelledError, StopAsyncIteration):
+                        pass
         elapsed = max(time.time() - start, 0.0)
         yield f"data: {json.dumps({'type': 'usage', 'data': {'total_time': round(elapsed, 3)}})}\n\n"
         yield "data: [DONE]\n\n"
