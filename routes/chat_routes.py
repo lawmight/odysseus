@@ -842,6 +842,7 @@ def setup_chat_routes(
                             "session_id": session,
                             "agent_id": session_manager.get_cursor_agent_id(session),
                             "session_manager": session_manager,
+                            "owner": _user,
                         }
                     async for chunk in stream_llm_with_fallback(
                         _chat_candidates,

@@ -1070,6 +1070,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             cwd=cwd,
             cursor_agent_id=cursor_agent_id,
             odysseus_session_id=odysseus_session_id,
+            owner=cursor_meta.get("owner"),
         ):
             if chunk.startswith("data: ") and '"type": "cursor_agent_id"' in chunk:
                 try:

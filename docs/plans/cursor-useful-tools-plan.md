@@ -17,6 +17,7 @@ Success looks like:
 2. Odysseus streams tool progress (optional) and renders the result as an **`image_url`** SSE event (same path as other vision/image bubbles in `static/js/chat.js`).
 3. Generated assets are served from Odysseus uploads/gallery (or a documented bridge path), not raw filesystem paths in the browser.
 4. Agent mode + Cursor remains blocked (“Chat only”); tool surfacing does not expand Cursor into Agent tab.
+5. Session reload shows image bubbles via `metadata.tool_events` (see [cursor-plan-c-plus-polish.md](./cursor-plan-c-plus-polish.md)).
 
 ---
 

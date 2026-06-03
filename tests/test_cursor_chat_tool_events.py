@@ -33,6 +33,17 @@ def test_tool_event_from_chat_tool_output_ignores_non_output():
     assert tool_event_from_chat_tool_output({"type": "tool_start", "tool": "generate_image"}) is None
 
 
+def test_chat_mode_accumulates_tool_output_with_helper():
+    """Chat mode uses tool_event_from_chat_tool_output for reload metadata."""
+    source = _CHAT_ROUTES.read_text(encoding="utf-8")
+    assert "tool_event_from_chat_tool_output" in source
+    assert "_cursor_tool_events" in source
+    idx = source.find('elif data.get("type") in ("tool_start", "tool_output")')
+    assert idx != -1
+    snippet = source[idx : idx + 800]
+    assert "tool_event_from_chat_tool_output" in snippet
+
+
 def test_chat_mode_save_passes_tool_events_to_save_assistant_response():
     """Regression: Cursor Chat stream must persist tool_events for reload bubbles."""
     source = _CHAT_ROUTES.read_text(encoding="utf-8")

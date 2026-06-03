@@ -626,6 +626,12 @@ def cursor_tool_call_chunks(
             session_id=session_id,
             owner=owner,
         )
+    elif isinstance(result, dict):
+        _status = result.get("status")
+        logger.info(
+            "Cursor generateImage completed without extractable image (status=%s)",
+            _status if _status is not None else "unknown",
+        )
 
     output = "Generated image." if image_meta.get("image_url") else "Image generation finished (no file returned)."
     tool_output: Dict[str, Any] = {
@@ -659,6 +665,7 @@ async def stream_cursor_chat(
     *,
     cursor_agent_id: str | None = None,
     odysseus_session_id: str | None = None,
+    owner: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream Cursor assistant text as Odysseus SSE chunks."""
     start = time.time()
@@ -714,6 +721,7 @@ async def stream_cursor_chat(
                         workspace=workspace,
                         model=model,
                         session_id=odysseus_session_id,
+                        owner=owner,
                     ):
                         yield chunk
                 elif event_type == "error":

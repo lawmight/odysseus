@@ -1,6 +1,6 @@
 # Plan C+ polish — follow-up work
 
-**Status:** Planned (not started)  
+**Status:** Shipped (PRs #13–#15 or branch stack `cursor/plan-c-plus-polish-pr*-4811`)  
 **Prerequisite:** Plan C+ v1 shipped on `main` ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md), PR #12 + `6b3fcc0` path fix)  
 **Non-goals:** Plan B (Agent tab), expanding Cursor tool allowlist without product sign-off
 
