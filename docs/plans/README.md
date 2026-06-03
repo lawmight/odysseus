@@ -20,7 +20,7 @@
 | Check | Result |
 |-------|--------|
 | **Commit** | `0696a03` on `main` (2026-06-03) |
-| **Full pytest** | `1484 passed, 1 skipped` (`python -m pytest -q`) |
+| **Full pytest** | `1486 passed, 1 skipped` (`python -m pytest -q`) |
 | **Agent + Cursor** | Blocked with HTTP 400 “Chat only” (expected until Plan B) |
 | **Plan B code** | **Not started** |
 | **CI** | GitHub Actions on `main` ([workflows](https://github.com/lawmight/odysseus/actions/workflows/ci.yml)); enable required checks per [CONTRIBUTING.md](../../CONTRIBUTING.md#branch-protection-maintainers) |
