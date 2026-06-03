@@ -377,7 +377,7 @@ Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/i
 
 Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** requires `cursor-sdk` and the bridge on the host where uvicorn runs.
 
-Cursor endpoints are **Chat-only** (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the Docker app container unless you install the SDK there too). Multi-turn Chat reuses a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Agent** mode, utility/vision background tasks, and Compare still require OpenAI-compatible or Anthropic endpoints — see `docs/plans/cursor-agent-tab-integration-plan.md` for future Agent-tab support.
+Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). Multi-turn Chat and Agent reuse a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Compare**, **Deep Research**, and utility/vision background tasks still skip Cursor endpoints — see [`docs/plans/cursor-agent-tab-integration-plan.md`](docs/plans/cursor-agent-tab-integration-plan.md) for Phase 2–4 (MCP bridge, cloud runtime).
 
 ## Architecture
 ```

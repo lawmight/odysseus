@@ -1,10 +1,10 @@
 # Cursor integration — merge & ship plan
 
-**Status:** **Historical** — Plan A/C and Plan C+ are shipped on `main`. This doc records the 2026-06-02 merge playbook.  
+**Status:** **Historical** — Plan A/C, Plan C+, and Plan B Phase 1 are shipped on `main`. Remote `cursor/*` branches were pruned; **`main` is the only integration line.**  
 **Date:** 2026-06-02 (updated 2026-06-03)  
-**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (next), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
+**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (Phase 2–4 next), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
 
-**Next work:** [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B). PR #2 / #8 branch map below is archival only.
+**Next work:** Plan B Phases 2–4 in [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md). PR #2 / #8 branch map below is archival only.
 
 ---
 

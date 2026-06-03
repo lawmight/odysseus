@@ -155,16 +155,16 @@ Re-query Nia before implementation if `api.md` indexing completed (for rate limi
 
 ---
 
-## Pre–Plan B cleanup gate @ `0696a03` (2026-06-03)
+## Integration status @ `main` (2026-06-03)
 
 | Item | Status |
 |------|--------|
-| Full `pytest -q` on `main` | 1484 passed, 1 skipped (local); CI creates `data/` before pytest |
 | Plan A/C/C+ Chat | Shipped |
-| Plan B (`stream_cursor_agent_loop`) | Not started |
-| Agent + Cursor endpoint | HTTP 400 “Chat only” until Plan B |
+| Plan B Phase 1 (`stream_cursor_agent_loop`) | Shipped ([#17](https://github.com/lawmight/odysseus/pull/17)) |
+| Agent + Cursor endpoint | Agent mode uses Cursor SDK engine; tool events map to `tool_start` / `tool_output` |
+| Compare / Research + Cursor | Still excluded (utility resolver / mode guards) |
 
-See [docs/plans/README.md](./README.md#pre-plan-b-gate-recorded) for PR links and maintainer checklist.
+Pre–Plan B gate (`0696a03`, Agent blocked): archival — see [docs/plans/README.md](./README.md#post-plan-b-phase-1-current).
 
 ---
 

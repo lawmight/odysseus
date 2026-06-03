@@ -2,7 +2,7 @@
 
 **Status:** Shipped on `main` @ `3a1b985` (PR #2, 2026-06-02)  
 **Target repo:** Odysseus (self-hosted AI workspace)  
-**Related:** Plan A (adapter design), Plan B (Agent tab — deferred), Plan C+ ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)  
+**Related:** Plan A (adapter design), Plan B Phase 1 (Agent tab — [shipped](./README.md)), Plan C+ ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)  
 **Implementation reference:** merged via PR #2 → `main` (`3a1b985`)
 
 ---
@@ -210,7 +210,7 @@ Re-query Nia / docs before implementation if the SDK minor version bumps.
 - [ ] Missing SDK / bridge → actionable setup message.
 - [ ] Stop mid-stream → `cancel` invoked; partial assistant text saved.
 - [ ] Fallback chain with Cursor as non-primary candidate still works.
-- [ ] Agent mode + Cursor endpoint → **blocked** with clear message (not silent text-only agent loop).
+- [x] Agent mode + Cursor endpoint → **blocked** with clear message *(Plan C era; superseded by Plan B Phase 1 — Agent now uses `stream_cursor_agent_loop`)*
 - [ ] Utility resolver does not return Cursor endpoint by default.
 
 ---

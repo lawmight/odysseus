@@ -234,7 +234,7 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `ody.endpoint_preset` | `provider=cursor`, `cursor://local` | App | shipped | `model_routes`, admin UI | Workspace cwd in `provider_config` | A/C | |
 | `ody.supports_tools_false` | Cursor endpoints disable Odysseus tools | App | shipped | `model_routes` | `supports_tools=False` | A/C | |
-| `ody.chat_only_guard` | Agent/Compare/Research block | App | **blocked** | `chat_routes.py` ~973 | HTTP 400 clear error | **B** to unblock | |
+| `ody.chat_only_guard` | Compare/Research block; Agent unblocked | App | **partial** | `chat_routes.py`, `endpoint_resolver.py` | Agent → `stream_cursor_agent_loop`; Compare/Research still skip Cursor | **B** Phase 1 shipped | |
 | `ody.utility_exclude` | Utility resolver skips Cursor | App | shipped | `endpoint_resolver.py` | `exclude_cursor=True` | A/C | |
 | `ody.vision_fallback_exclude` | Vision fallback skips Cursor | App | shipped | `endpoint_resolver.py` | Same | A/C | |
 | `ody.task_http_guard` | No HTTP fallback to `cursor://` | App | shipped | `endpoint_resolver.py` | Background tasks can't POST cursor | A/C | |
@@ -264,7 +264,7 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 ## Maintenance
 
 - **After Plan C+:** Update rows `stream.tool_call`, `tool.generateImage`, and any new asset-serving helpers to **shipped**.
-- **After Plan B:** Update `send.mode_*`, `ody.chat_only_guard`, and tool rows to **shipped** or **partial**.
+- **After Plan B Phase 1:** `ody.chat_only_guard` → **partial** (Agent unblocked; Compare/Research still blocked). Update remaining Phase 2–4 rows when shipped.
 - **Re-verify** against Nia `71741e4c` when `cursor-sdk` is upgraded beyond `0.1.6`.
 
 **Tests to run after matrix-affecting code changes:**
