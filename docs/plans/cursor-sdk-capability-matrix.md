@@ -1,7 +1,7 @@
 # Cursor SDK × Odysseus capability matrix
 
-**Last updated:** 2026-06-02  
-**Odysseus branch:** `main` @ `edb2495`  
+**Last updated:** 2026-06-03  
+**Odysseus branch:** `main` @ `0696a03`  
 **Purpose:** Inventory every major Cursor Python SDK capability and map it to what Odysseus implements today. Use this to scope Plan C+, Plan B, and avoid surprise gaps.
 
 **Nia sources used:**
@@ -50,14 +50,15 @@
 
 ### Top gaps by user impact (fix or plan next)
 
-1. **`tool_call` / `generateImage` → Chat UI** — SDK runs tools; Odysseus drops events (**C+**)
-2. **`SendOptions.mode` (plan/agent)** — Agent tab Cursor engine (**B**)
-3. **Full tool mapping → `tool_start` / `tool_output`** — Agent tab (**B**)
-4. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** / Phase 3)
-5. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
-6. **`local.force`** — recover stuck local runs (**Phase 2**)
-7. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
-8. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
+1. **`SendOptions.mode` (plan/agent)** — Agent tab Cursor engine (**B**)
+2. **Full tool mapping → `tool_start` / `tool_output`** — Agent tab (**B**)
+3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** / Phase 3)
+4. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
+5. **`local.force`** — recover stuck local runs (**Phase 2**)
+6. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
+7. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
+
+**Shipped (C+):** Chat `generateImage` → `tool_start` / `tool_output` / `image_url` ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)).
 
 ### Plan C+ checklist (filter `Target plan = C+`)
 
@@ -233,13 +234,13 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `ody.endpoint_preset` | `provider=cursor`, `cursor://local` | App | shipped | `model_routes`, admin UI | Workspace cwd in `provider_config` | A/C | |
 | `ody.supports_tools_false` | Cursor endpoints disable Odysseus tools | App | shipped | `model_routes` | `supports_tools=False` | A/C | |
-| `ody.chat_only_guard` | Agent/Compare/Research block | App | **blocked** | `chat_routes.py` ~886 | HTTP 400 clear error | **B** to unblock | |
+| `ody.chat_only_guard` | Agent/Compare/Research block | App | **blocked** | `chat_routes.py` ~973 | HTTP 400 clear error | **B** to unblock | |
 | `ody.utility_exclude` | Utility resolver skips Cursor | App | shipped | `endpoint_resolver.py` | `exclude_cursor=True` | A/C | |
 | `ody.vision_fallback_exclude` | Vision fallback skips Cursor | App | shipped | `endpoint_resolver.py` | Same | A/C | |
 | `ody.task_http_guard` | No HTTP fallback to `cursor://` | App | shipped | `endpoint_resolver.py` | Background tasks can't POST cursor | A/C | |
 | `ody.fallback_chain` | Chat fallback includes Cursor candidates | App | shipped | `stream_llm_with_fallback` | Works through cursor branch | A/C | |
 | `ody.workspace_roots` | `CURSOR_ALLOWED_WORKSPACE_ROOTS` | App | shipped | `validate_cursor_cwd` | Path allowlist | A/C | |
-| `ody.optional_install` | `requirements-cursor.txt` | App | shipped | `scripts/cloud-agent-install.sh` | Clear 503 if SDK missing | A/C | |
+| `ody.optional_install` | `requirements-cursor.txt` | App | **partial** | `cloud-agent-install.sh`, `CURSOR_SDK_AVAILABLE` | Gated on Cloud Agent / `ODYSSEUS_INSTALL_CURSOR`; CI always installs cursor-sdk | A/C | Admin `sdk_missing` when import fails |
 | `ody.shutdown` | Close bridges on app shutdown | App | shipped | `close_cursor_bridges` | Called from app lifecycle | A/C | |
 
 ---
@@ -269,5 +270,11 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 **Tests to run after matrix-affecting code changes:**
 
 ```bash
-pytest tests/test_cursor_adapter.py tests/test_cursor_plan_c.py tests/test_model_routes.py -q
+python -m pytest -q
+```
+
+Cursor-focused subset:
+
+```bash
+pytest tests/test_cursor_adapter.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py tests/test_model_routes.py tests/test_cursor_admin_ui.py -q
 ```

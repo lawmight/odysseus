@@ -254,7 +254,7 @@ Do not implement Plan B. Use cursor-sdk UserMessage/SDKImage and Agent.resume pe
 
 | Claim | Source |
 |-------|--------|
-| Plan A/B file paths | Branch `cursor/plan-docs-efe9` |
+| Plan A/B file paths | [`docs/plans/`](README.md) on `main` |
 | PR #2 scope | Branch `cursor/cursor-chat-provider-e76a` |
 | Odysseus Chat path | `routes/chat_routes.py` `chat_mode == "chat"` → `stream_llm_with_fallback` |
 | Odysseus attachments | `src/chat_handler.py` `build_user_content` |

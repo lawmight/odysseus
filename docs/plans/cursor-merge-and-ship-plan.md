@@ -1,8 +1,10 @@
 # Cursor integration — merge & ship plan
 
-**Status:** Shipped on `main` as of `3a1b985` (PR [#2](https://github.com/lawmight/odysseus/pull/2), merged 2026-06-02)  
-**Date:** 2026-06-02  
-**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), Plan B (deferred), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
+**Status:** **Historical** — Plan A/C and Plan C+ are shipped on `main`. This doc records the 2026-06-02 merge playbook.  
+**Date:** 2026-06-02 (updated 2026-06-03)  
+**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (next), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
+
+**Next work:** [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B). PR #2 / #8 branch map below is archival only.
 
 ---
 

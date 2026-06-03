@@ -155,6 +155,19 @@ Re-query Nia before implementation if `api.md` indexing completed (for rate limi
 
 ---
 
+## Pre–Plan B cleanup gate @ `0696a03` (2026-06-03)
+
+| Item | Status |
+|------|--------|
+| Full `pytest -q` on `main` | 1484 passed, 1 skipped (local); CI creates `data/` before pytest |
+| Plan A/C/C+ Chat | Shipped |
+| Plan B (`stream_cursor_agent_loop`) | Not started |
+| Agent + Cursor endpoint | HTTP 400 “Chat only” until Plan B |
+
+See [docs/plans/README.md](./README.md#pre-plan-b-gate-recorded) for PR links and maintainer checklist.
+
+---
+
 ## Suggested handoff prompt for another agent
 
 ```

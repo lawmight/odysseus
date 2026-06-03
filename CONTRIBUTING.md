@@ -20,7 +20,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Manual development uses Python 3.11+:
+Manual development uses Python 3.11+ (CI uses 3.12):
 
 ```bash
 python3 -m venv venv

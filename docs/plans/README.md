@@ -11,4 +11,26 @@
 | **Matrix** | [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md) | SDK feature inventory vs Odysseus status (gaps, C+, B). |
 | — | [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md) | API/SDK facts and handoff snippets (shared by A/B/C). |
 
-**Implementation status (2026-06-03):** Plan A/C Chat BYOK **shipped on `main`**. Plan C+ **`generateImage` in Chat** shipped. Next: [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B).
+**Implementation status (2026-06-03):** Plan A/C Chat BYOK **shipped on `main`**. Plan C+ **`generateImage` in Chat** shipped. Pre–Plan B cleanup **complete**. Next: [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B).
+
+---
+
+## Pre–Plan B gate (recorded)
+
+| Check | Result |
+|-------|--------|
+| **Commit** | `0696a03` on `main` (2026-06-03) |
+| **Full pytest** | `1484 passed, 1 skipped` (`python -m pytest -q`) |
+| **Agent + Cursor** | Blocked with HTTP 400 “Chat only” (expected until Plan B) |
+| **Plan B code** | **Not started** |
+| **CI** | GitHub Actions on `main` ([workflows](https://github.com/lawmight/odysseus/actions/workflows/ci.yml)); enable required checks per [CONTRIBUTING.md](../../CONTRIBUTING.md#branch-protection-maintainers) |
+
+**Cleanup PRs:** [#15](https://github.com/lawmight/odysseus/pull/15) lockfile, [#16](https://github.com/lawmight/odysseus/pull/16) CI, optional SDK + `ci: data/` fix on `main`.
+
+### Entry criteria before Plan B Phase 1
+
+- [x] `main` clean; `package.json` name pins lockfile
+- [x] Full pytest green locally @ `0696a03`
+- [x] Docs on `main` under `docs/plans/` (no `plan-docs-efe9` pointers)
+- [ ] GitHub required status checks enabled (maintainer)
+- [ ] Plan B product defaults in first Plan B PR description (`SendOptions(mode="agent")`, Compare/Research stay blocked)

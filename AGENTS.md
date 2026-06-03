@@ -221,10 +221,14 @@ No project-wide linter is configured.
 
 ```bash
 source venv/bin/activate
-pytest
+python -m pytest -q
 ```
 
-Cursor-specific: `pytest tests/test_cursor_adapter.py tests/test_model_routes.py -q`
+CI on every PR to `main` runs the full suite (see [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration)). For Cursor-only iteration:
+
+```bash
+pytest tests/test_cursor_adapter.py tests/test_model_routes.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py -q
+```
 
 Optional JS-related tests: `pytest tests/test_compare_js.py` (needs Node). Bombadil E2E: see `tests/bombadil-spec.ts` and `npm install`.
 
@@ -281,7 +285,7 @@ PY
 - Model listing uses the Cursor HTTP API; **Chat streaming** requires the SDK bridge on the Odysseus host
 - Chat mode only; Agent tab still uses OpenAI-compatible / Anthropic endpoints
 
-See plan docs on branch `origin/cursor/plan-docs-efe9` under `docs/plans/`.
+See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** is [Plan B](docs/plans/cursor-agent-tab-integration-plan.md) (not started).
 
 ---
 
