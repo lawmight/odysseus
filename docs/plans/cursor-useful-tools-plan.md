@@ -41,6 +41,8 @@ In `stream_cursor_chat`, handle SDK events:
 - `tool_call` complete for `generateImage` → resolve asset path from bridge/SDK payload.
 - Emit SSE compatible with existing chat.js handlers: `tool_output` and/or `image_url`.
 
+See capability matrix row **`tool.generateImage`** in [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md).
+
 Reference: Cursor SDK already emits `tool_call` with `name: "generateImage"` on image-gen prompts; Plan A/C adapter currently ignores `tool_call` in Chat.
 
 ### 3.2 Asset serving
