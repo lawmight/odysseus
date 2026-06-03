@@ -1,0 +1,52 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-config:
+    name: docker-config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose files
+        run: docker compose config
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Odysseus image
+        run: docker build -t odysseus-ci:pr .
+
+  docker-smoke:
+    name: docker-smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start stack and health-check
+        run: |
+          cp .env.example .env
+          docker compose up -d --build odysseus
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:7000/api/auth/status >/dev/null; then
+              echo "Odysseus healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose logs --tail=120 odysseus
+          exit 1
