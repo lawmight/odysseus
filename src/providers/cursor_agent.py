@@ -27,6 +27,15 @@ __all__ = [
     "cancel_cursor_run",
 ]
 
+_FAILURE_STATUSES = frozenset({"failed", "error", "cancelled", "canceled"})
+
+
+def _heartbeat_interval_sec() -> float:
+    try:
+        return float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
+    except ValueError:
+        return 15.0
+
 
 def _format_tool_result(result: Any) -> str:
     if result is None:
@@ -38,6 +47,19 @@ def _format_tool_result(result: Any) -> str:
         return json.dumps(result, default=str)[:4000]
     except (TypeError, ValueError):
         return str(result)[:4000]
+
+
+def _exit_code_from_result(result: Any, *, default: int = 0) -> int:
+    if isinstance(result, dict):
+        for key in ("exit_code", "exit", "code"):
+            val = result.get(key)
+            if isinstance(val, bool):
+                continue
+            if isinstance(val, int):
+                return val
+            if isinstance(val, str) and val.lstrip("-").isdigit():
+                return int(val)
+    return default
 
 
 def cursor_agent_tool_call_chunks(event: Any) -> List[str]:
@@ -61,21 +83,47 @@ def cursor_agent_tool_call_chunks(event: Any) -> List[str]:
         )
         return chunks
 
-    if status not in ("completed", "complete"):
+    if status in ("completed", "complete"):
+        result = _ca._get_attr(event, "result")
+        output = _format_tool_result(result) or f"{name} completed."
+        chunks.append(
+            _ca._sse_data({
+                "type": "tool_output",
+                "tool": name,
+                "command": command,
+                "output": output,
+                "exit_code": _exit_code_from_result(result, default=0),
+            })
+        )
         return chunks
 
-    result = _ca._get_attr(event, "result")
-    output = _format_tool_result(result) or f"{name} completed."
-    chunks.append(
-        _ca._sse_data({
-            "type": "tool_output",
-            "tool": name,
-            "command": command,
-            "output": output,
-            "exit_code": 0,
-        })
-    )
+    if status in _FAILURE_STATUSES:
+        result = _ca._get_attr(event, "result")
+        output = _format_tool_result(result) or f"{name} failed ({status})."
+        chunks.append(
+            _ca._sse_data({
+                "type": "tool_output",
+                "tool": name,
+                "command": command,
+                "output": output,
+                "exit_code": _exit_code_from_result(result, default=1),
+            })
+        )
+        return chunks
+
     return chunks
+
+
+def _sse_error_from_exception(exc: Exception) -> str:
+    message = str(exc) or exc.__class__.__name__
+    lower = message.lower()
+    status = 401 if "unauthorized" in lower or "api key" in lower else 502
+    if "429" in lower or "rate limit" in lower:
+        status = 429
+        message = "Cursor rate limit reached. Wait a moment and try again."
+    if ("bridge" in lower or "cursor" in lower) and "not found" in lower:
+        message = f"{message}. Ensure the Cursor SDK bridge can run on the Odysseus host."
+    return f"event: error\ndata: {json.dumps({'status': status, 'text': message, 'error': message})}\n\n"
 
 
 async def stream_cursor_agent_loop(
@@ -92,8 +140,12 @@ async def stream_cursor_agent_loop(
     cursor_agent_id: str | None = None,
     headers: Optional[Dict[str, str]] = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream Cursor agent run as Odysseus Agent-mode SSE (tools + text)."""
-    del temperature, max_tool_calls, owner
+    """Stream Cursor agent run as Odysseus Agent-mode SSE (tools + text).
+
+    temperature and owner are accepted for call-site parity with stream_agent_loop
+    but are not passed to the Cursor SDK in v1.
+    """
+    del temperature, owner
     if not is_cursor_url(endpoint_url):
         yield (
             "event: error\ndata: "
@@ -119,6 +171,7 @@ async def stream_cursor_agent_loop(
 
     start = time.time()
     run = None
+    tool_calls_used = 0
     try:
         key = (api_key or "").strip() or extract_cursor_api_key(headers)
         if not key:
@@ -146,7 +199,7 @@ async def stream_cursor_agent_loop(
             if session_id:
                 await _ca.register_cursor_run(session_id, run)
             _msg_iter = run.messages().__aiter__()
-            _heartbeat_s = float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
+            _heartbeat_s = _heartbeat_interval_sec()
             _pending_msg: asyncio.Task[Any] = asyncio.create_task(_msg_iter.__anext__())
             try:
                 while True:
@@ -184,8 +237,22 @@ async def stream_cursor_agent_loop(
                         if text:
                             yield f"data: {json.dumps({'delta': text, 'thinking': True})}\n\n"
                     elif event_type == "tool_call":
+                        status = str(_ca._get_attr(event, "status", "") or "").lower()
+                        if (
+                            status == "running"
+                            and max_tool_calls > 0
+                            and tool_calls_used >= max_tool_calls
+                        ):
+                            yield _ca._sse_data({
+                                "type": "budget_exceeded",
+                                "limit": max_tool_calls,
+                                "used": tool_calls_used,
+                            })
+                            break
                         for chunk in cursor_agent_tool_call_chunks(event):
                             yield chunk
+                        if status == "running":
+                            tool_calls_used += 1
                     elif event_type == "error":
                         text = str(
                             _ca._get_attr(event, "message", "")
@@ -207,8 +274,7 @@ async def stream_cursor_agent_loop(
         yield f"event: error\ndata: {json.dumps({'status': exc.status, 'text': str(exc), 'error': str(exc)})}\n\n"
     except Exception as exc:
         logger.exception("Unexpected Cursor agent stream failure")
-        message = str(exc) or exc.__class__.__name__
-        yield f"event: error\ndata: {json.dumps({'status': 502, 'text': message, 'error': message})}\n\n"
+        yield _sse_error_from_exception(exc)
     finally:
         if session_id:
             async with _ca._active_cursor_runs_lock:

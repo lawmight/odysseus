@@ -31,3 +31,21 @@ def test_cursor_agent_tool_call_completed_emits_tool_output():
     assert payload["type"] == "tool_output"
     assert payload["tool"] == "run_terminal_cmd"
     assert payload["exit_code"] == 0
+
+
+def test_cursor_agent_tool_call_failed_emits_tool_output():
+    chunks = cursor_agent_tool_call_chunks(
+        _ToolEvent("read_file", "failed", {"path": "x"}, result={"error": "not found"})
+    )
+    assert len(chunks) == 1
+    payload = json.loads(chunks[0].removeprefix("data: ").strip())
+    assert payload["type"] == "tool_output"
+    assert payload["exit_code"] == 1
+    assert "not found" in payload["output"]
+
+
+def test_heartbeat_interval_sec_invalid_env(monkeypatch):
+    from src.providers import cursor_agent as ca
+
+    monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "not-a-number")
+    assert ca._heartbeat_interval_sec() == 15.0
