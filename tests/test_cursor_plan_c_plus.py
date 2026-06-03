@@ -255,13 +255,13 @@ async def test_stream_heartbeat_does_not_cancel_slow_tool_completion(monkeypatch
     assert '"image_url": "/api/generated-image/' in joined
 
 
-def test_chat_routes_blocks_cursor_in_agent_mode():
-    """Regression: Agent + Cursor must stay Chat-only blocked."""
+def test_chat_routes_uses_cursor_agent_loop_in_agent_mode():
+    """Regression: Agent + Cursor routes through stream_cursor_agent_loop (Plan B)."""
     import inspect
 
     import routes.chat_routes as chat_routes
 
     source = inspect.getsource(chat_routes.setup_chat_routes)
-    assert "Cursor endpoints are for Chat only" in source
+    assert "stream_cursor_agent_loop" in source
 
 

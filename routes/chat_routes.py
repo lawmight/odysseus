@@ -969,19 +969,7 @@ def setup_chat_routes(
                 finally:
                     _active_streams.pop(session, None)
             else:
-                # ── Agent mode: full agent loop with tools ──
-                if _detect_provider(sess.endpoint_url) == "cursor":
-                    yield (
-                        'event: error\ndata: '
-                        + json.dumps({
-                            "status": 400,
-                            "text": "Cursor endpoints are for Chat only. Switch to Chat mode or pick an OpenAI-compatible endpoint for Agent.",
-                            "error": "Cursor endpoints are for Chat only.",
-                        })
-                        + "\n\n"
-                    )
-                    _active_streams.pop(session, None)
-                    return
+                # ── Agent mode: native loop or Cursor SDK engine (Plan B) ──
                 _agent_rounds = 0
                 _agent_tool_calls = 0
                 _answered_by = None  # set if the selected model failed and a fallback answered
@@ -989,22 +977,47 @@ def setup_chat_routes(
                     from src.settings import get_setting
                     _tool_budget = int(get_setting("agent_max_tool_calls", 0))
 
-                    async for chunk in stream_agent_loop(
-                        sess.endpoint_url,
-                        sess.model,
-                        messages,
-                        headers=sess.headers,
-                        temperature=ctx.preset.temperature,
-                        max_tokens=ctx.preset.max_tokens,
-                        prompt_type=preset_id,
-                        max_tool_calls=_tool_budget,
-                        context_length=ctx.context_length,
-                        active_document=active_doc,
-                        session_id=session,
-                        disabled_tools=disabled_tools if disabled_tools else None,
-                        owner=_user,
-                        fallbacks=_fallback_candidates,
-                    ):
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        from src.providers.cursor_adapter import extract_cursor_api_key
+                        from src.providers.cursor_agent import stream_cursor_agent_loop
+
+                        _cursor_cwd = None
+                        for _hk, _hv in (sess.headers or {}).items():
+                            if _hk.lower() == "x-odysseus-cursor-cwd":
+                                _cursor_cwd = _hv
+                                break
+                        _agent_chunk_iter = stream_cursor_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            api_key=extract_cursor_api_key(sess.headers),
+                            cwd=_cursor_cwd,
+                            session_id=session,
+                            headers=sess.headers,
+                            cursor_agent_id=session_manager.get_cursor_agent_id(session),
+                            temperature=ctx.preset.temperature,
+                            max_tool_calls=_tool_budget,
+                            owner=_user,
+                        )
+                    else:
+                        _agent_chunk_iter = stream_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            headers=sess.headers,
+                            temperature=ctx.preset.temperature,
+                            max_tokens=ctx.preset.max_tokens,
+                            prompt_type=preset_id,
+                            max_tool_calls=_tool_budget,
+                            context_length=ctx.context_length,
+                            active_document=active_doc,
+                            session_id=session,
+                            disabled_tools=disabled_tools if disabled_tools else None,
+                            owner=_user,
+                            fallbacks=_fallback_candidates,
+                        )
+
+                    async for chunk in _agent_chunk_iter:
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
                                 data = json.loads(chunk[6:])
@@ -1018,6 +1031,11 @@ def setup_chat_routes(
                                     yield chunk
                                 elif data.get("type") == "web_sources":
                                     web_sources = data.get("data", [])
+                                    yield chunk
+                                elif data.get("type") == "cursor_agent_id":
+                                    _new_cursor_id = data.get("agent_id")
+                                    if _new_cursor_id:
+                                        session_manager.set_cursor_agent_id(session, _new_cursor_id)
                                     yield chunk
                                 elif data.get("type") in (
                                     "tool_start", "tool_output", "agent_step",
