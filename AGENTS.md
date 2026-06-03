@@ -89,9 +89,10 @@ python3 -m venv venv
 source venv/bin/activate
 python -m pip install -U pip wheel
 python -m pip install -r requirements.txt
-for req in requirements-optional.txt requirements-cursor.txt; do
-  [[ -f "$req" ]] && python -m pip install -r "$req"
-done
+[[ -f requirements-optional.txt ]] && python -m pip install -r requirements-optional.txt
+if [[ -n "${CLOUD_AGENT_ALL_SECRET_NAMES:-}" ]] || [[ -n "${CURSOR_API_KEY:-}" ]] || [[ "${ODYSSEUS_INSTALL_CURSOR:-}" =~ ^(1|true|yes|on)$ ]]; then
+  [[ -f requirements-cursor.txt ]] && python -m pip install -r requirements-cursor.txt
+fi
 [[ -f package.json ]] && command -v npm >/dev/null && npm install --no-audit --no-fund
 if [[ ! -f data/auth.json ]]; then
   export ODYSSEUS_ADMIN_PASSWORD="${ODYSSEUS_ADMIN_PASSWORD:-odysseus-$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')}"
@@ -118,12 +119,13 @@ Cursor runs the **`install`** command from [`.cursor/environment.json`](.cursor/
 That script (idempotent):
 
 - Creates/uses `venv`
-- Installs `requirements.txt`, `requirements-optional.txt`, and **`requirements-cursor.txt`** (`cursor-sdk`)
+- Installs `requirements.txt` and `requirements-optional.txt`
+- Installs **`requirements-cursor.txt`** (`cursor-sdk`) when a Cloud Agent env is detected (`CLOUD_AGENT_ALL_SECRET_NAMES`, `CURSOR_API_KEY`) or when `ODYSSEUS_INSTALL_CURSOR=1`
 - Runs `npm install` if Node is present
 - Runs `python setup.py` once if `data/auth.json` is missing
 - Saves a generated first-boot admin password to `data/admin-password.txt` (0600) instead of logging the value
 
-You do **not** need to hand-run `pip install -r requirements-cursor.txt` if `install` has already succeeded — check:
+You do **not** need to hand-run `pip install -r requirements-cursor.txt` if `install` already installed cursor-sdk — check:
 
 ```bash
 source venv/bin/activate && python -c "import cursor_sdk; print('cursor-sdk OK')"
@@ -266,8 +268,17 @@ PY
 
 ## Cursor chat provider (Plan A)
 
-- Install: `requirements-cursor.txt` (included in `cloud-agent-install.sh`)
-- Admin: **Settings → Model Endpoints → Cursor (local)**, workspace under `CURSOR_ALLOWED_WORKSPACE_ROOTS` (default: repo root)
+| Install context | Cursor SDK |
+|-----------------|------------|
+| Core only | `pip install -r requirements.txt` — not included |
+| Optional features | `+ requirements-optional.txt` |
+| Cursor Chat | `+ requirements-cursor.txt` or `ODYSSEUS_INSTALL_CURSOR=1` during cloud install |
+| Cloud Agent VM | Auto when Cloud Agent env is detected |
+| Docker Compose | Not in the default image; optional `RUN pip install -r requirements-cursor.txt` in a custom layer |
+
+- Install: `requirements-cursor.txt` (optional; auto on Cloud Agent VMs when env is detected)
+- Admin: **Settings → Add Models → API → Cursor (local)** (hidden until SDK is installed), workspace under `CURSOR_ALLOWED_WORKSPACE_ROOTS` (default: repo root)
+- Model listing uses the Cursor HTTP API; **Chat streaming** requires the SDK bridge on the Odysseus host
 - Chat mode only; Agent tab still uses OpenAI-compatible / Anthropic endpoints
 
 See plan docs on branch `origin/cursor/plan-docs-efe9` under `docs/plans/`.

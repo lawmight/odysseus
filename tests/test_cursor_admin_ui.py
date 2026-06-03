@@ -21,6 +21,13 @@ def test_cursor_provider_option_and_workspace_input_exist():
     assert "hidden" in row.get("class", [])
 
 
+def test_cursor_install_hint_element_exists():
+    soup = BeautifulSoup((ROOT / "static/index.html").read_text(encoding="utf-8"), "html.parser")
+    hint = soup.select_one("#adm-epCursorInstallHint")
+    assert hint is not None
+    assert "hidden" in hint.get("class", [])
+
+
 def test_admin_js_toggles_cursor_workspace_row():
     js = (ROOT / "static/js/admin.js").read_text(encoding="utf-8")
 
@@ -30,3 +37,6 @@ def test_admin_js_toggles_cursor_workspace_row():
     assert "Cursor API key is required" in js
     assert "fd.append('provider', 'cursor')" in js
     assert "fd.append('cursor_cwd', cursorCwd.value.trim())" in js
+    assert "include_meta=1" in js
+    assert "_endpointMeta.cursor_sdk_available" in js
+    assert "adm-epCursorInstallHint" in js

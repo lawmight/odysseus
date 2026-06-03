@@ -5,7 +5,8 @@
 # memory, and tool selection are core paths, so they ship by default now.
 #
 # Cursor Chat provider: use requirements-cursor.txt (cursor-sdk>=0.1.6).
-# Cloud Agents install it via scripts/cloud-agent-install.sh / .cursor/environment.json.
+# Not installed by default. Cloud Agents auto-install when CLOUD_AGENT_ALL_SECRET_NAMES
+# or CURSOR_API_KEY is set, or when ODYSSEUS_INSTALL_CURSOR=1.
 
 # Local speech-to-text (microphone -> text) via faster-whisper, for the
 # "local" STT provider. Runs on CPU out of the box (CTranslate2 backend, no

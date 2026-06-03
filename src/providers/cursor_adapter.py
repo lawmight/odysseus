@@ -19,6 +19,9 @@ import httpx
 
 CURSOR_LOCAL_URL = "cursor://local"
 CURSOR_MODELS_URL = "https://api.cursor.com/v1/models"
+CURSOR_SDK_MISSING = (
+    "Cursor SDK is not installed. Run `pip install -r requirements-cursor.txt` on the Odysseus host."
+)
 _CURSOR_CWD_HEADER = "X-Odysseus-Cursor-Cwd"
 _BRIDGE_CACHE_MAX = int(os.getenv("CURSOR_BRIDGE_CACHE_MAX", "4") or "4")
 logger = logging.getLogger(__name__)
@@ -247,10 +250,7 @@ async def close_cursor_bridges() -> None:
 
 async def _get_bridge_client(cwd: str) -> Any:
     if not CURSOR_SDK_AVAILABLE:
-        raise CursorAdapterError(
-            "Cursor SDK is not installed. Run `pip install -r requirements-cursor.txt` on the Odysseus host.",
-            status=503,
-        )
+        raise CursorAdapterError(CURSOR_SDK_MISSING, status=503)
     evicted: List[Dict[str, Any]] = []
     async with _bridge_lock:
         cached = _bridge_clients.get(cwd)
