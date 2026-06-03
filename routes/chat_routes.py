@@ -810,6 +810,9 @@ def setup_chat_routes(
                                         full_response += data["delta"]
                                         _stream_set(session, partial=full_response)
                                     yield chunk
+                                elif data.get("type") in ("tool_start", "tool_output"):
+                                    # Cursor Plan C+: generateImage tool SSE (chat.js renders image_url).
+                                    yield chunk
                                 elif data.get("type") == "fallback":
                                     # Selected model failed; a fallback answered.
                                     # Forward the notice and remember the real model.

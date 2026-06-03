@@ -158,3 +158,23 @@ def test_chat_routes_blocks_cursor_in_agent_mode():
 
     source = inspect.getsource(chat_routes.setup_chat_routes)
     assert "Cursor endpoints are for Chat only" in source
+
+
+def test_chat_routes_forwards_cursor_tool_sse_in_chat_mode():
+    """Chat mode must forward tool_start/tool_output (Plan C+ generateImage)."""
+    import inspect
+    import re
+
+    import routes.chat_routes as chat_routes
+
+    source = inspect.getsource(chat_routes.setup_chat_routes)
+    chat_blocks = re.findall(
+        r"elif chat_mode == \"chat\":.*?(?=elif chat_mode ==|\Z)",
+        source,
+        flags=re.DOTALL,
+    )
+    assert chat_blocks, "expected chat_mode == 'chat' block"
+    chat_block = chat_blocks[0]
+    assert '"tool_start", "tool_output"' in chat_block or (
+        '"tool_start"' in chat_block and '"tool_output"' in chat_block
+    )
