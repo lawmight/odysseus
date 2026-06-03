@@ -83,8 +83,9 @@ def test_list_cursor_models_request_error(monkeypatch):
 
 def test_validate_cursor_cwd_allows_filesystem_root(monkeypatch):
     monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", "/")
+    cwd = os.getcwd()
 
-    assert cursor_adapter.validate_cursor_cwd("/workspace") == "/workspace"
+    assert cursor_adapter.validate_cursor_cwd(cwd) == cwd
 
 
 def test_iter_content_blocks_expands_tuple_content():
