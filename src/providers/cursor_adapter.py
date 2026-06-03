@@ -694,7 +694,16 @@ async def stream_cursor_chat(
             run = await agent.send(payload, {"model": model})
             if odysseus_session_id:
                 await register_cursor_run(odysseus_session_id, run)
-            async for event in run.messages():
+            _msg_iter = run.messages().__aiter__()
+            _heartbeat_s = float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
+            while True:
+                try:
+                    event = await asyncio.wait_for(_msg_iter.__anext__(), timeout=_heartbeat_s)
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+                except StopAsyncIteration:
+                    break
                 async with _active_cursor_runs_lock:
                     entry = _active_cursor_runs.get(odysseus_session_id or "")
                     if entry and entry.get("cancelled"):
@@ -716,6 +725,14 @@ async def stream_cursor_chat(
                     if text:
                         yield f"data: {json.dumps({'delta': text, 'thinking': True})}\n\n"
                 elif event_type == "tool_call":
+                    _tc_name = str(_get_attr(event, "name", "") or "")
+                    _tc_status = str(_get_attr(event, "status", "") or "")
+                    logger.info(
+                        "Cursor tool_call name=%s status=%s session=%s",
+                        _tc_name,
+                        _tc_status,
+                        odysseus_session_id or "",
+                    )
                     for chunk in cursor_tool_call_chunks(
                         event,
                         workspace=workspace,

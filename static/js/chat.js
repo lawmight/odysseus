@@ -2271,6 +2271,21 @@ import createResearchSynapse from './researchSynapse.js';
       _renderStream();
       _cancelThinkingTimer();
       _removeThinkingSpinner();
+      // Tool cards still in "running" never got tool_output (e.g. Cursor closed early).
+      document.querySelectorAll('.agent-thread-node.running').forEach(node => {
+        if (node._waveInterval) { clearInterval(node._waveInterval); node._waveInterval = null; }
+        if (node._elapsedTicker) { clearInterval(node._elapsedTicker); node._elapsedTicker = null; }
+        node.classList.remove('running');
+        const wave = node.querySelector('.agent-thread-wave');
+        if (wave) wave.remove();
+        const header = node.querySelector('.agent-thread-header');
+        if (header && !header.querySelector('.agent-thread-status')) {
+          const s = document.createElement('span');
+          s.className = 'agent-thread-status';
+          s.textContent = 'incomplete';
+          header.appendChild(s);
+        }
+      });
       // Stop any thread pulse animations
       document.querySelectorAll('.agent-thread.streaming').forEach(t => t.classList.remove('streaming'));
       // --- Final render (skip if stream was ever backgrounded or currently in background) ---
