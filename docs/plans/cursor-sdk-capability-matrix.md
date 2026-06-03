@@ -120,7 +120,7 @@
 | ID | SDK capability | Surface | Status | Odysseus location | Behavior today | Plan | Notes |
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `run.send` | `agent.send(message, options)` | Async | shipped | `stream_cursor_chat` | Passes `{"model": model}` on send | A/C | |
-| `run.messages` | `async for event in run.messages()` | Async | partial | `stream_cursor_chat` | Handles `assistant`, `thinking`, `error` only | C+ / B | Ignores other types |
+| `run.messages` | `async for event in run.messages()` | Async | partial | `stream_cursor_chat` | Handles `assistant`, `thinking`, `tool_call` (allowlist), `error` | B | Chat maps `generateImage` only |
 | `run.events` | `run.events()` / `RunStreamEvent` | Async | gap | — | Not used | Phase 3 | Lower-level than messages |
 | `run.iter_text` | `run.iter_text()` | Async | gap | — | Manual delta mapping instead | n/a | Equivalent via assistant blocks |
 | `run.text` | `await run.text()` | Async | gap | — | Streaming only in Chat | n/a | |
@@ -141,8 +141,8 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `stream.assistant` | `type: assistant` text blocks | Async | shipped | `stream_cursor_chat` | → SSE `delta` | A/C | |
 | `stream.thinking` | `type: thinking` | Async | shipped | `stream_cursor_chat` | → SSE `delta` + `thinking: true` | A/C | |
-| `stream.tool_call` | `type: tool_call` (`SDKToolUseMessage`) | Async | **partial** | `stream_cursor_chat` | **Silently ignored** | **C+** / **B** | Stable envelope; unstable args/result |
-| `tool.generateImage` | Tool name `generateImage` | Async | **gap** | — | SDK generates file; no UI | **C+** | See matrix row `stream.tool_call` |
+| `stream.tool_call` | `type: tool_call` (`SDKToolUseMessage`) | Async | partial | `stream_cursor_chat` | Allowlist → `tool_start` / `tool_output` | **B** | Chat: `generateImage` only |
+| `tool.generateImage` | Tool name `generateImage` | Async | shipped | `cursor_tool_call_chunks`, `publish_cursor_generated_image` | → `image_url` under `/api/generated-image/` | A/C+ | Unstable args/result; defensive path parse |
 | `stream.system` | `type: system` | Async | gap | — | Ignored | n/a | |
 | `stream.user` | `type: user` (`SDKUserMessageEvent`) | Async | gap | — | Ignored on stream | n/a | |
 | `stream.status` | `type: status` | Async | gap | — | Ignored | C+ | Optional status line |
