@@ -223,9 +223,9 @@ def build_models_url(base: str) -> str:
 
 def build_headers(api_key: Optional[str], base: str, provider_config: Optional[str] = None) -> Dict[str, str]:
     """Build auth headers for an endpoint."""
-    if not api_key:
-        return {}
     if is_cursor_url(base):
+        if not api_key:
+            return {}
         return cursor_headers(api_key, provider_config)
     provider = _detect_provider(base)
     headers: Dict[str, str] = {}
@@ -234,8 +234,9 @@ def build_headers(api_key: Optional[str], base: str, provider_config: Optional[s
             headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
         return headers
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    if not api_key:
+        return {}
+    headers["Authorization"] = f"Bearer {api_key}"
     if provider == "openrouter":
         headers.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
         headers.setdefault("X-OpenRouter-Title", "Odysseus")
