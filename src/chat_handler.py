@@ -146,8 +146,10 @@ class ChatHandler:
         # Analyze images — skip if vision disabled, or if main model is vision-capable
         from src.settings import get_setting
         vision_enabled = get_setting("vision_enabled", True)
-        main_is_vision = chat_accepts_image_attachments(
-            sess.model or "", getattr(sess, "endpoint_url", "") or ""
+        main_is_vision = await asyncio.to_thread(
+            chat_accepts_image_attachments,
+            sess.model or "",
+            getattr(sess, "endpoint_url", "") or "",
         )
 
         # Resolve uploads once with the session owner. Attachment IDs are

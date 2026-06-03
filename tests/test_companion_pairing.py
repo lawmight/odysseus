@@ -9,6 +9,7 @@ Covers what the review asked for:
 """
 
 import contextlib
+import importlib
 import os
 import sys
 import types
@@ -16,6 +17,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+
+from tests.conftest import restore_real_core_modules
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -44,26 +47,82 @@ class _DBStub(types.ModuleType):
         return MagicMock()
 
 
-_db = _DBStub("core.database")
-_db.get_db_session = _get_db_session
-_db.ApiToken = _ApiToken
-sys.modules["core.database"] = _db  # overwrite any minimal stub from a sibling test
+HTTPException = None
+P = None
+companion_routes = None
+mint_pairing_token = None
+setup_companion_routes = None
+require_admin = None
 
-for _name, _attrs in {
-    "core.auth": {"AuthManager": MagicMock()},
-    "src.endpoint_resolver": {"build_chat_url": (lambda u: u)},
-}.items():
-    if _name not in sys.modules:
+
+_COMPANION_STUBBED_MODULES = (
+    "core.database",
+    "core.auth",
+    "src.endpoint_resolver",
+)
+
+
+def _install_companion_stubs(saved: dict):
+    _db = _DBStub("core.database")
+    _db.get_db_session = _get_db_session
+    _db.ApiToken = _ApiToken
+    sys.modules["core.database"] = _db
+
+    for _name, _attrs in {
+        "core.auth": {"AuthManager": MagicMock()},
+        "src.endpoint_resolver": {"build_chat_url": (lambda u: u)},
+    }.items():
+        saved.setdefault(_name, sys.modules.get(_name))
         _mm = types.ModuleType(_name)
         for _k, _v in _attrs.items():
             setattr(_mm, _k, _v)
         sys.modules[_name] = _mm
 
-from fastapi import HTTPException  # noqa: E402
+    for mod_name in list(sys.modules):
+        if mod_name.startswith("companion."):
+            saved.setdefault(mod_name, sys.modules.get(mod_name))
+            del sys.modules[mod_name]
 
-import companion.pairing as P  # noqa: E402
-from companion.routes import mint_pairing_token, setup_companion_routes  # noqa: E402
-from core.middleware import require_admin  # noqa: E402
+
+def _restore_companion_stubs(saved: dict):
+    for mod_name in list(sys.modules):
+        if mod_name.startswith("companion."):
+            del sys.modules[mod_name]
+    for mod_name in _COMPANION_STUBBED_MODULES:
+        prior = saved.get(mod_name)
+        if prior is None:
+            sys.modules.pop(mod_name, None)
+        else:
+            sys.modules[mod_name] = prior
+    restore_real_core_modules()
+    for mod_name in ("routes.model_routes",):
+        if mod_name in sys.modules:
+            importlib.reload(sys.modules[mod_name])
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _companion_test_imports():
+    global P, companion_routes, mint_pairing_token, setup_companion_routes, require_admin
+    saved = {}
+    _install_companion_stubs(saved)
+
+    from fastapi import HTTPException as _HTTPException
+    import companion.pairing as _P
+    import companion.routes as _companion_routes
+    from companion.routes import mint_pairing_token as _mint_pairing_token
+    from companion.routes import setup_companion_routes as _setup_companion_routes
+    from core.middleware import require_admin as _require_admin
+
+    globals()["HTTPException"] = _HTTPException
+    P = _P
+    companion_routes = _companion_routes
+    mint_pairing_token = _mint_pairing_token
+    setup_companion_routes = _setup_companion_routes
+    require_admin = _require_admin
+
+    yield
+
+    _restore_companion_stubs(saved)
 
 
 # --- token minting: shown once, hashed at rest -----------------------------
@@ -148,9 +207,24 @@ def _pair_methods():
     return methods
 
 
+def _pair_endpoint(method):
+    router = setup_companion_routes()
+    for r in router.routes:
+        if getattr(r, "path", "").endswith("/pair") and method in getattr(r, "methods", set()):
+            return r.endpoint
+    raise AssertionError(f"{method} /api/companion/pair route not found")
+
+
 def test_pair_is_minted_via_post_not_get():
     methods = _pair_methods()
     assert "POST" in methods, "pairing must accept POST (the mint)"
     assert "GET" in methods, "GET should render the form page"
     # The distinction is enforced in the handlers: GET renders a form and never
     # mints; only POST calls mint_pairing_token.
+
+
+def test_pair_page_uses_imported_admin_gate(monkeypatch):
+    monkeypatch.setattr(companion_routes, "require_admin", lambda request: None)
+    response = _pair_endpoint("GET")(SimpleNamespace())
+
+    assert "Pair a device" in str(getattr(response, "body", response))
