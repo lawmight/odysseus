@@ -441,6 +441,44 @@ def _looks_like_image_path(value: str) -> bool:
     return any(lower.endswith(ext) for ext in _IMAGE_EXTENSIONS)
 
 
+def _is_cursor_sdk_asset_path(real_path: str) -> bool:
+    """True when path is under ~/.cursor/projects/<name>/assets/ (Cursor generateImage output)."""
+    parts = Path(real_path).parts
+    for i, part in enumerate(parts):
+        if (
+            part == ".cursor"
+            and i + 4 < len(parts)
+            and parts[i + 1] == "projects"
+            and parts[i + 3] == "assets"
+        ):
+            return True
+    return False
+
+
+def _parse_tool_result_dict(result: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, str) and result.strip():
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _iter_generate_image_result_containers(result: Any) -> Iterable[Dict[str, Any]]:
+    """Walk Cursor tool result envelopes (value/output wrappers)."""
+    root = _parse_tool_result_dict(result)
+    if not root:
+        return
+    yield root
+    for key in ("value", "output", "data", "result"):
+        child = root.get(key)
+        if isinstance(child, dict):
+            yield child
+
+
 def _resolve_image_path_candidate(value: str, workspace: str) -> Optional[str]:
     if not value or not isinstance(value, str):
         return None
@@ -455,17 +493,13 @@ def _resolve_image_path_candidate(value: str, workspace: str) -> Optional[str]:
         if os.path.isfile(real) and _looks_like_image_path(real):
             if any(os.path.commonpath([real, root]) == root for root in _allowed_roots()):
                 return real
+            if _is_cursor_sdk_asset_path(real):
+                return real
     return None
 
 
 def _decode_image_bytes_from_result(result: Any) -> Optional[bytes]:
-    if not isinstance(result, dict):
-        return None
-    containers = [result]
-    output = result.get("output")
-    if isinstance(output, dict):
-        containers.append(output)
-    for container in containers:
+    for container in _iter_generate_image_result_containers(result):
         for key in ("b64_json", "base64", "data", "image_data"):
             raw = container.get(key)
             if not isinstance(raw, str) or not raw.strip():
@@ -480,17 +514,11 @@ def _decode_image_bytes_from_result(result: Any) -> Optional[bytes]:
 def extract_generate_image_path(result: Any, workspace: str) -> Optional[str]:
     """Extract a local image path from a Cursor generateImage tool result.
 
-    Expected keys: path, filePath, outputPath, etc. at the top level or under
-    ``output`` (Cursor SDK wrapper). Path strings are validated against
-    CURSOR_ALLOWED_WORKSPACE_ROOTS before returning.
+    Expected shape includes ``{"status": "success", "value": {"filePath": "..."}}``
+    (Cursor SDK) plus legacy flat/nested keys. Paths under workspace roots or
+    ``~/.cursor/projects/*/assets/`` are accepted.
     """
-    if not isinstance(result, dict):
-        return None
-    containers = [result]
-    output = result.get("output")
-    if isinstance(output, dict):
-        containers.append(output)
-    for container in containers:
+    for container in _iter_generate_image_result_containers(result):
         for key in _IMAGE_PATH_KEYS:
             val = container.get(key)
             if isinstance(val, str):

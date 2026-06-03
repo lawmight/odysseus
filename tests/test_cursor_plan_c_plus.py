@@ -42,6 +42,39 @@ def test_extract_generate_image_path_from_nested_dict(tmp_path, monkeypatch):
     assert cursor_adapter.extract_generate_image_path(result, str(tmp_path)) == str(img.resolve())
 
 
+def test_extract_generate_image_path_from_cursor_value_envelope(tmp_path, monkeypatch):
+    """Cursor SDK returns filePath under result.value, often outside workspace root."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(workspace))
+    assets = tmp_path / ".cursor" / "projects" / "workspace" / "assets"
+    assets.mkdir(parents=True)
+    img = assets / "logo.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    result = {"status": "success", "value": {"filePath": str(img)}}
+    assert cursor_adapter.extract_generate_image_path(result, str(workspace)) == str(img.resolve())
+
+
+def test_cursor_tool_call_completed_cursor_sdk_envelope(tmp_path, monkeypatch):
+    monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
+    assets = tmp_path / ".cursor" / "projects" / "ws" / "assets"
+    assets.mkdir(parents=True)
+    img = assets / "gen.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = SimpleNamespace(
+        name="generateImage",
+        status="completed",
+        args={"prompt": "cursor logo"},
+        result={"status": "success", "value": {"filePath": str(img)}},
+    )
+    chunks = cursor_adapter.cursor_tool_call_chunks(
+        event, workspace=str(tmp_path), model="composer-2.5"
+    )
+    payload = _parse_sse_data(chunks[0])
+    assert payload["exit_code"] == 0
+    assert payload["image_url"].startswith("/api/generated-image/")
+
+
 def test_cursor_tool_call_completed_publishes_image_url(tmp_path, monkeypatch):
     monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
     img = tmp_path / "gen.png"
