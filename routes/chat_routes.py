@@ -36,6 +36,7 @@ from routes.chat_helpers import (
     run_post_response_tasks,
     clean_thinking_for_save,
     _enforce_chat_privileges,
+    tool_event_from_chat_tool_output,
 )
 from src.action_intents import message_needs_tools as _message_needs_tools
 
@@ -831,6 +832,7 @@ def setup_chat_routes(
             elif chat_mode == "chat":
                 _chat_start = time.time()
                 _answered_by = None  # set if the selected model failed and a fallback answered
+                _cursor_tool_events: List[dict] = []
                 # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                 try:
                     _chat_candidates = [(sess.endpoint_url, sess.model, sess.headers)] + _fallback_candidates
@@ -869,6 +871,15 @@ def setup_chat_routes(
                                     yield chunk
                                 elif data.get("type") in ("tool_start", "tool_output"):
                                     # Cursor Plan C+: generateImage tool SSE (chat.js renders image_url).
+                                    if data.get("type") == "tool_output":
+                                        _tev = tool_event_from_chat_tool_output(data)
+                                        if _tev:
+                                            if _tev.get("image_url"):
+                                                _tool = _tev.get("tool") or "generate_image"
+                                                _cursor_tool_events = [
+                                                    e for e in _cursor_tool_events if e.get("tool") != _tool
+                                                ]
+                                            _cursor_tool_events.append(_tev)
                                     yield chunk
                                 elif data.get("type") == "fallback":
                                     # Selected model failed; a fallback answered.
@@ -918,15 +929,21 @@ def setup_chat_routes(
                                     "usage_source": "estimated",
                                 }
                                 yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                            if full_response:
+                            if full_response or _cursor_tool_events:
+                                _save_body = full_response
+                                if not (_save_body or "").strip() and _cursor_tool_events:
+                                    _save_body = (
+                                        _cursor_tool_events[-1].get("output") or "Generated image."
+                                    )
                                 _saved_id = save_assistant_response(
-                                    sess, session_manager, session, full_response, last_metrics,
+                                    sess, session_manager, session, _save_body, last_metrics,
                                     character_name=ctx.preset.character_name,
                                     web_sources=web_sources,
                                     rag_sources=ctx.rag_sources,
                                     research_sources=research_sources,
                                     used_memories=ctx.used_memories,
                                     do_research=do_research,
+                                    tool_events=_cursor_tool_events or None,
                                     incognito=incognito,
                                 )
                                 if _saved_id:
