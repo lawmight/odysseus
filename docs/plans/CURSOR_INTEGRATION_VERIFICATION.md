@@ -11,6 +11,7 @@
 |------|-------------|
 | `docs/plans/cursor-chat-model-provider-plan.md` | Plan A — Chat tab model provider |
 | `docs/plans/cursor-agent-tab-integration-plan.md` | Plan B — Agent tab Cursor engine |
+| `docs/plans/cursor-sdk-capability-matrix.md` | SDK × Odysseus capability matrix |
 | `docs/plans/CURSOR_INTEGRATION_VERIFICATION.md` | This verification sheet |
 
 ---
@@ -143,9 +144,12 @@ yield f'data: {json.dumps({"type": "tool_start", "tool": name, "command": cmd})}
 
 | Source ID | URL | Status |
 |-----------|-----|--------|
+| `5c39f490-db62-4a02-a6df-8db343f8b597` | `lawmight/odysseus` @ `main` | indexed (repo) |
 | `abe7140b-c0c5-4e3b-899c-04826a0d02a5` | https://cursor.com/docs/cloud-agent/api/endpoints.md | completed |
 | `71741e4c-d188-415c-b114-0c6a5b656526` | https://cursor.com/docs/sdk/python.md | completed |
 | `a064b4a5-31f7-456a-aae3-d0ceabd712cf` | https://cursor.com/docs/api.md | processing at write time |
+
+Full SDK × Odysseus mapping: [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md).
 
 Re-query Nia before implementation if `api.md` indexing completed (for rate limits and auth edge cases).
 
