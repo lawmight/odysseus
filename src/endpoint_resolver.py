@@ -279,7 +279,7 @@ def resolve_endpoint(
     # This prevents background tasks from jumping to the global default_model
     # when the user is mid-conversation with a different model.
     if not ep_id and fallback_url and fallback_model:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     # Unset Utility means "same as Default Chat Model".
     if setting_prefix == "utility" and not ep_id:
