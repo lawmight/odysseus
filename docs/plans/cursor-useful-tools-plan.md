@@ -1,6 +1,6 @@
 # Plan C+: Cursor useful tools in Chat
 
-**Status:** Design / next after Plan A/C ship  
+**Status:** Shipped (generateImage v1)  
 **Target repo:** Odysseus (self-hosted AI workspace)  
 **Related:** [cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md) (shipped), [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B — deferred), [cursor-merge-and-ship-plan.md](./cursor-merge-and-ship-plan.md) §6  
 **Branch from:** `main` after `3a1b985`
