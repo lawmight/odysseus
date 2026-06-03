@@ -12,6 +12,10 @@ let modalEl = null;
 // the endpoints list can flash a glow on that row. Cleared once the
 // animation fires.
 let _recentlyAddedEpId = null;
+let _endpointMeta = {
+  cursor_sdk_available: true,
+  cursor_install_hint: '',
+};
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s); }
@@ -405,7 +409,9 @@ async function loadEndpoints() {
       // empty, but we still need to render the expand panel so the user can
       // un-hide them. Gate on the total instead.
       const hasModels = ep.online && totalCount > 0;
-      const statusBadge = ep.status === 'empty'
+      const statusBadge = ep.status === 'sdk_missing'
+        ? '<span class="admin-badge admin-badge-off">chat disabled — install SDK</span>'
+        : ep.status === 'empty'
         ? '<span class="admin-badge">no models</span>'
         : ep.online
           ? `<span class="admin-badge">${visibleCount}/${totalCount} models enabled</span>`
@@ -640,6 +646,36 @@ function initEndpointForm() {
   const cursorRow = el('adm-epCursorRow');
   const cursorHelp = el('adm-epCursorHelp');
   const cursorCwd = el('adm-epCursorCwd');
+  const cursorInstallHint = el('adm-epCursorInstallHint');
+
+  function _updateCursorInstallHint() {
+    if (!cursorInstallHint) return;
+    if (!_endpointMeta.cursor_sdk_available && _endpointMeta.cursor_install_hint) {
+      cursorInstallHint.textContent = _endpointMeta.cursor_install_hint;
+      cursorInstallHint.classList.remove('hidden');
+    } else {
+      cursorInstallHint.textContent = '';
+      cursorInstallHint.classList.add('hidden');
+    }
+  }
+
+  async function _refreshEndpointMeta() {
+    try {
+      const res = await fetch('/api/model-endpoints?include_meta=1', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (payload && payload.meta) {
+        _endpointMeta = payload.meta;
+        _updateCursorInstallHint();
+        _renderPickerMenu();
+        if (provider.value === 'cursor://local' && !_endpointMeta.cursor_sdk_available) {
+          provider.value = '';
+          provider.dispatchEvent(new Event('change', { bubbles: true }));
+          _syncPickerCurrent();
+        }
+      }
+    } catch (_) { /* silent */ }
+  }
 
   // Custom provider picker — mirrors the (now hidden) <select id="adm-epProvider">
   // so the rest of this function (which reads provider.value and dispatches
@@ -650,7 +686,9 @@ function initEndpointForm() {
   const pickerCurrent = picker ? picker.querySelector('.adm-provider-current') : null;
   function _renderPickerMenu() {
     if (!pickerMenu) return;
-    pickerMenu.innerHTML = Array.from(provider.options).map(o => {
+    pickerMenu.innerHTML = Array.from(provider.options)
+      .filter(o => o.value !== 'cursor://local' || _endpointMeta.cursor_sdk_available)
+      .map(o => {
       const logo = o.dataset.logo ? (providerLogo(o.dataset.logo) || '') : '';
       const active = o.value === provider.value ? ' active' : '';
       return `<div class="adm-provider-item${active}" role="option" data-value="${o.value.replace(/"/g, '&quot;')}">
@@ -1079,6 +1117,7 @@ function initEndpointForm() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
   });
+  _refreshEndpointMeta();
 }
 
 /* ═══════════════════════════════════════════

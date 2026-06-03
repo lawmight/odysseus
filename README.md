@@ -358,13 +358,24 @@ npx -y @playwright/mcp@latest --version
 That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
 
 ### Cursor as a chat provider
-Admins can add **Cursor (local)** in **Settings -> Model Endpoints**. Install the optional SDK on the Odysseus host first:
+
+| Install context | Cursor SDK |
+|-----------------|------------|
+| Core install | Not included (`requirements.txt` only) |
+| Optional features | `requirements-optional.txt` |
+| Cursor Chat | `pip install -r requirements-cursor.txt` |
+| Cloud Agent VM | Auto when Cloud Agent env is detected, or set `ODYSSEUS_INSTALL_CURSOR=1` |
+| Docker Compose | Not in the default [`Dockerfile`](Dockerfile); add `RUN pip install -r requirements-cursor.txt` in a custom image if needed |
+
+Admins can add **Cursor (local)** in **Settings → Add Models → API** (the preset appears only after the SDK is installed). Install the optional SDK on the Odysseus host first:
 
 ```bash
 pip install -r requirements-cursor.txt
 ```
 
 Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat**.
+
+Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** requires `cursor-sdk` and the bridge on the host where uvicorn runs.
 
 Cursor endpoints are **Chat-only** (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the Docker app container unless you install the SDK there too). Multi-turn Chat reuses a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Agent** mode, utility/vision background tasks, and Compare still require OpenAI-compatible or Anthropic endpoints — see `docs/plans/cursor-agent-tab-integration-plan.md` for future Agent-tab support.
 

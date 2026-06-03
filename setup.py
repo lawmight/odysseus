@@ -177,6 +177,8 @@ def check_deps():
     elif os.name != "nt":
         print("  [ok] tmux installed")
 
+    print("\n  [info] Cursor Chat (optional): pip install -r requirements-cursor.txt")
+
 
 def admin_password_hint():
     password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()

@@ -9,7 +9,7 @@ import time as _time
 import logging
 import httpx
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Annotated
 from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, Form, Query, Body, Request
 from pydantic import BaseModel
@@ -27,6 +27,8 @@ from src.endpoint_resolver import (
 from src.auth_helpers import _auth_disabled, owner_filter
 from src.providers.cursor_adapter import (
     CURSOR_LOCAL_URL,
+    CURSOR_SDK_AVAILABLE,
+    CURSOR_SDK_MISSING,
     CursorAdapterError,
     cached_model_ids,
     cursor_provider_config,
@@ -943,6 +945,13 @@ def setup_model_routes(model_discovery):
 
         async def _probe_one(ep_id: str, base: str, api_key: Optional[str]) -> Dict[str, Any]:
             if is_cursor_url(base):
+                if not CURSOR_SDK_AVAILABLE:
+                    return {
+                        "alive": False,
+                        "latency_ms": None,
+                        "status_code": 503,
+                        "error": CURSOR_SDK_MISSING,
+                    }
                 t0 = _time.time()
                 try:
                     await _asyncio.to_thread(list_cursor_models, api_key, 1.5)
@@ -998,17 +1007,23 @@ def setup_model_routes(model_discovery):
                 "category": _classify_endpoint(base),
             }
             if provider == "cursor":
-                try:
-                    t0 = _time.time()
-                    models = list_cursor_models(ep.api_key, timeout=5)
-                    entry["latency_ms"] = round((_time.time() - t0) * 1000)
-                    entry["status"] = "online"
-                    entry["model_count"] = len(models)
-                except Exception as e:
+                if not CURSOR_SDK_AVAILABLE:
                     entry["latency_ms"] = None
-                    entry["status"] = "offline"
-                    entry["error"] = str(e)
+                    entry["status"] = "sdk_missing"
+                    entry["error"] = CURSOR_SDK_MISSING
                     entry["model_count"] = 0
+                else:
+                    try:
+                        t0 = _time.time()
+                        models = list_cursor_models(ep.api_key, timeout=5)
+                        entry["latency_ms"] = round((_time.time() - t0) * 1000)
+                        entry["status"] = "online"
+                        entry["model_count"] = len(models)
+                    except Exception as e:
+                        entry["latency_ms"] = None
+                        entry["status"] = "offline"
+                        entry["error"] = str(e)
+                        entry["model_count"] = 0
             elif provider == "anthropic":
                 # Anthropic has no /models endpoint; just check connectivity
                 try:
@@ -1187,7 +1202,10 @@ def setup_model_routes(model_discovery):
     # ---- Admin: model endpoints CRUD ----
 
     @router.get("/model-endpoints")
-    def list_model_endpoints(request: Request) -> List[Dict[str, Any]]:
+    def list_model_endpoints(
+        request: Request,
+        include_meta: Annotated[bool, Query()] = False,
+    ):
         require_admin(request)
         db = SessionLocal()
         try:
@@ -1222,13 +1240,17 @@ def setup_model_routes(model_discovery):
                     (m.get("displayName") if isinstance(m, dict) else str(m))
                     for m in visible
                 ]
+                endpoint_provider = _normalize_provider(getattr(r, "provider", None), r.base_url)
+                cursor_sdk_missing = endpoint_provider == "cursor" and not CURSOR_SDK_AVAILABLE
                 status = "online" if all_models else "offline"
                 ping = None
+                if cursor_sdk_missing and all_models:
+                    status = "sdk_missing"
                 if not all_models and r.is_enabled:
                     ping = _ping_endpoint(r.base_url, r.api_key, timeout=1.0)
                     if ping.get("reachable"):
                         status = "empty"
-                results.append({
+                entry = {
                     "id": r.id,
                     "name": r.name,
                     "base_url": r.base_url,
@@ -1237,14 +1259,25 @@ def setup_model_routes(model_discovery):
                     "models": visible_ids,
                     "models_display": models_display,
                     "hidden_count": len(hidden),
-                    "online": status != "offline",
+                    "online": status not in ("offline", "sdk_missing"),
                     "status": status,
                     "ping_error": (ping or {}).get("error") if ping else None,
                     "model_type": getattr(r, "model_type", None) or "llm",
                     "supports_tools": getattr(r, "supports_tools", None),
-                    "provider": _normalize_provider(getattr(r, "provider", None), r.base_url),
+                    "provider": endpoint_provider,
                     "provider_config": getattr(r, "provider_config", None),
-                })
+                }
+                if cursor_sdk_missing:
+                    entry["cursor_sdk_missing"] = True
+                results.append(entry)
+            if include_meta:
+                return {
+                    "endpoints": results,
+                    "meta": {
+                        "cursor_sdk_available": CURSOR_SDK_AVAILABLE,
+                        "cursor_install_hint": CURSOR_SDK_MISSING,
+                    },
+                }
             return results
         finally:
             db.close()
@@ -1272,6 +1305,8 @@ def setup_model_routes(model_discovery):
         base_url = base_url.strip().rstrip("/")
         endpoint_provider = _normalize_provider(provider, base_url)
         if endpoint_provider == "cursor":
+            if not CURSOR_SDK_AVAILABLE:
+                raise HTTPException(503, CURSOR_SDK_MISSING)
             base_url = CURSOR_LOCAL_URL
             normalized_model_type = (model_type.strip() if model_type else "llm") or "llm"
             if normalized_model_type != "llm":

@@ -61,13 +61,34 @@ source venv/bin/activate
 
 python -m pip install -U pip wheel
 python -m pip install -r requirements.txt
-for req in requirements-optional.txt requirements-cursor.txt; do
-  if [[ -f "$req" ]]; then
-    python -m pip install -r "$req"
-  else
-    echo "cloud-agent-install: skipping missing optional requirements file: $req"
+
+_truthy() {
+  case "${1:-}" in 1|true|TRUE|yes|YES|on|ON) return 0 ;; *) return 1 ;; esac
+}
+
+_should_install_cursor() {
+  if _truthy "${ODYSSEUS_INSTALL_CURSOR:-}"; then
+    return 0
   fi
-done
+  if [[ -n "${CLOUD_AGENT_ALL_SECRET_NAMES:-}" ]] || [[ -n "${CURSOR_API_KEY:-}" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+if [[ -f requirements-optional.txt ]]; then
+  python -m pip install -r requirements-optional.txt
+else
+  echo "cloud-agent-install: skipping missing optional requirements file: requirements-optional.txt"
+fi
+
+_cursor_installed=0
+if _should_install_cursor && [[ -f requirements-cursor.txt ]]; then
+  python -m pip install -r requirements-cursor.txt
+  _cursor_installed=1
+elif [[ -f requirements-cursor.txt ]]; then
+  echo "cloud-agent-install: skipping requirements-cursor.txt (set ODYSSEUS_INSTALL_CURSOR=1 or use a Cloud Agent env to install)"
+fi
 
 if [[ -f package.json ]] && command -v npm >/dev/null 2>&1; then
   npm install --no-audit --no-fund
@@ -93,4 +114,8 @@ if [[ ! -f data/auth.json ]]; then
   python setup.py
 fi
 
-echo "cloud-agent-install: OK (venv + cursor-sdk + optional deps)"
+if [[ "$_cursor_installed" == 1 ]]; then
+  echo "cloud-agent-install: OK (venv + optional deps + cursor-sdk)"
+else
+  echo "cloud-agent-install: OK (venv + optional deps)"
+fi

@@ -531,6 +531,7 @@ def cursor_route_env(monkeypatch, tmp_path):
     monkeypatch.setattr(model_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(model_routes, "_load_settings", lambda: {})
     monkeypatch.setattr(model_routes, "_save_settings", lambda settings: None)
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", True)
     _entries = [{"id": "composer-2.5", "displayName": "Composer 2.5"}]
     monkeypatch.setattr(model_routes, "list_cursor_model_entries", lambda api_key, timeout=5: list(_entries))
     monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=5: ["composer-2.5"])
@@ -583,7 +584,7 @@ def test_list_model_endpoints_includes_cursor_metadata(cursor_route_env):
     )
     list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
 
-    response = list_endpoint(SimpleNamespace())
+    response = list_endpoint(_fake_model_request(), include_meta=False)
 
     assert response[0]["provider"] == "cursor"
     assert json.loads(response[0]["provider_config"])["cwd"] == workspace
@@ -641,6 +642,69 @@ def test_create_cursor_endpoint_rejects_non_llm_model_type(cursor_route_env):
 
     assert excinfo.value.status_code == 400
     assert "only support LLM" in excinfo.value.detail
+
+
+def test_create_cursor_endpoint_rejects_missing_sdk(monkeypatch, cursor_route_env):
+    _, workspace = cursor_route_env
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", False)
+    create = _model_endpoint_route("/api/model-endpoints", "POST")
+
+    with pytest.raises(HTTPException) as excinfo:
+        create(
+            _fake_model_request(),
+            name="cursor-endpoint-no-sdk",
+            base_url="cursor://local",
+            api_key="cur-key",
+            skip_probe="false",
+            require_models="false",
+            provider="cursor",
+            provider_config="",
+            cursor_cwd=workspace,
+            model_type="llm",
+            supports_tools="",
+            shared="true",
+        )
+
+    assert excinfo.value.status_code == 503
+    assert "requirements-cursor.txt" in excinfo.value.detail
+
+
+def test_list_model_endpoints_include_meta(cursor_route_env):
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    plain = list_endpoint(_fake_model_request(), include_meta=False)
+    wrapped = list_endpoint(_fake_model_request(), include_meta=True)
+
+    assert isinstance(plain, list)
+    assert wrapped["meta"]["cursor_sdk_available"] is True
+    assert "requirements-cursor.txt" in wrapped["meta"]["cursor_install_hint"]
+    assert isinstance(wrapped["endpoints"], list)
+
+
+def test_list_model_endpoints_flags_cursor_sdk_missing(monkeypatch, cursor_route_env):
+    rows, workspace = cursor_route_env
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", False)
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur",
+            name="cursor-endpoint",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps([{"id": "composer-2.5", "displayName": "Composer 2.5"}]),
+            supports_tools=False,
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    response = list_endpoint(_fake_model_request(), include_meta=False)
+
+    assert response[0]["status"] == "sdk_missing"
+    assert response[0]["cursor_sdk_missing"] is True
+    assert response[0]["online"] is False
 
 
 def test_api_models_normalizes_cursor_cached_entries(monkeypatch, cursor_route_env):
