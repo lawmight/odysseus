@@ -49,3 +49,12 @@ def test_heartbeat_interval_sec_invalid_env(monkeypatch):
 
     monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "not-a-number")
     assert ca._heartbeat_interval_sec() == 15.0
+
+
+def test_heartbeat_interval_sec_non_positive_env(monkeypatch):
+    from src.providers import cursor_agent as ca
+
+    monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "0")
+    assert ca._heartbeat_interval_sec() == 15.0
+    monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "-1")
+    assert ca._heartbeat_interval_sec() == 15.0

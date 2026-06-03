@@ -32,7 +32,8 @@ _FAILURE_STATUSES = frozenset({"failed", "error", "cancelled", "canceled"})
 
 def _heartbeat_interval_sec() -> float:
     try:
-        return float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
+        value = float(os.getenv("CURSOR_STREAM_HEARTBEAT_SEC", "15") or "15")
+        return value if value > 0 else 15.0
     except ValueError:
         return 15.0
 
