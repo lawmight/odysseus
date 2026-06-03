@@ -1672,52 +1672,42 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
             img = images[0]
             image_url = None
             image_id = None
+            from routes.gallery_helpers import save_generated_image_bytes
 
-            def _save_to_gallery(filename: str) -> str:
-                """Insert a GalleryImage row and return the new id (or '')."""
-                try:
-                    from src.database import SessionLocal as _GallerySL, GalleryImage
-                    new_id = str(uuid.uuid4())
-                    _gdb = _GallerySL()
-                    _gdb.add(GalleryImage(
-                        id=new_id,
-                        filename=filename,
-                        prompt=prompt,
-                        model=model_id,
-                        size=size,
-                        quality=payload.get("quality", "medium"),
-                        session_id=session_id,
-                        owner=owner,
-                    ))
-                    _gdb.commit()
-                    _gdb.close()
-                    return new_id
-                except Exception as _ge:
-                    logger.warning(f"Failed to save gallery record: {_ge}")
-                    return ""
+            _quality_val = payload.get("quality", "medium")
 
             # GPT image models always return b64_json; DALL-E may return url
             if img.get("b64_json"):
-                img_dir = Path("data/generated_images")
-                img_dir.mkdir(parents=True, exist_ok=True)
-                filename = f"{uuid.uuid4().hex[:12]}.png"
-                img_path = img_dir / filename
-                img_path.write_bytes(base64.b64decode(img.get("b64_json")))
-                image_url = f"/api/generated-image/{filename}"
-                image_id = _save_to_gallery(filename)
+                _meta = save_generated_image_bytes(
+                    base64.b64decode(img.get("b64_json")),
+                    prompt=prompt,
+                    model=model_id,
+                    session_id=session_id,
+                    owner=owner,
+                    ext="png",
+                    size=size,
+                    quality=_quality_val,
+                )
+                image_url = _meta.get("image_url")
+                image_id = _meta.get("image_id")
 
             elif img.get("url"):
                 # Download external URL and save locally (DALL-E returns temp URLs)
                 try:
                     dl_resp = httpx.get(img["url"], timeout=60)
                     if dl_resp.status_code == 200:
-                        img_dir = Path("data/generated_images")
-                        img_dir.mkdir(parents=True, exist_ok=True)
-                        filename = f"{uuid.uuid4().hex[:12]}.png"
-                        img_path = img_dir / filename
-                        img_path.write_bytes(dl_resp.content)
-                        image_url = f"/api/generated-image/{filename}"
-                        image_id = _save_to_gallery(filename)
+                        _meta = save_generated_image_bytes(
+                            dl_resp.content,
+                            prompt=prompt,
+                            model=model_id,
+                            session_id=session_id,
+                            owner=owner,
+                            ext="png",
+                            size=size,
+                            quality=_quality_val,
+                        )
+                        image_url = _meta.get("image_url")
+                        image_id = _meta.get("image_id")
                     else:
                         image_url = img["url"]  # fallback to external URL
                 except Exception as _dl_e:

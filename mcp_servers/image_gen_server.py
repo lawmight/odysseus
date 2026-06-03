@@ -7,7 +7,6 @@ MCP server exposing image generation via OpenAI-compatible APIs.
 import asyncio
 import base64
 import sys
-import uuid
 from pathlib import Path
 
 from mcp.server import Server
@@ -115,34 +114,38 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             img = images[0]
             image_url = None
+            from routes.gallery_helpers import save_generated_image_bytes
+
+            _quality_val = payload.get("quality", "medium")
 
             if img.get("b64_json"):
-                img_dir = Path("data/generated_images")
-                img_dir.mkdir(parents=True, exist_ok=True)
-                filename = f"{uuid.uuid4().hex[:12]}.png"
-                img_path = img_dir / filename
-                img_path.write_bytes(base64.b64decode(img["b64_json"]))
-                image_url = f"/api/generated-image/{filename}"
-
-                # Save to gallery
-                try:
-                    from src.database import SessionLocal, GalleryImage
-                    db = SessionLocal()
-                    db.add(GalleryImage(
-                        id=str(uuid.uuid4()),
-                        filename=filename,
-                        prompt=prompt,
-                        model=model_id,
-                        size=size,
-                        quality=payload.get("quality", "medium"),
-                    ))
-                    db.commit()
-                    db.close()
-                except Exception:
-                    pass
+                _meta = save_generated_image_bytes(
+                    base64.b64decode(img["b64_json"]),
+                    prompt=prompt,
+                    model=model_id,
+                    ext="png",
+                    size=size,
+                    quality=_quality_val,
+                )
+                image_url = _meta.get("image_url") or image_url
 
             elif img.get("url"):
-                image_url = img["url"]
+                try:
+                    dl_resp = httpx.get(img["url"], timeout=60)
+                    if dl_resp.status_code == 200:
+                        _meta = save_generated_image_bytes(
+                            dl_resp.content,
+                            prompt=prompt,
+                            model=model_id,
+                            ext="png",
+                            size=size,
+                            quality=_quality_val,
+                        )
+                        image_url = _meta.get("image_url")
+                    else:
+                        image_url = img["url"]
+                except Exception:
+                    image_url = img["url"]
             else:
                 return [TextContent(type="text", text="Error: Unexpected image API response format")]
 
