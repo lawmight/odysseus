@@ -32,20 +32,21 @@ def test_blocked_tools_for_owner_includes_edit_file_for_non_admin(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_edit_file_blocked_at_execution_for_non_admin(monkeypatch):
+async def test_edit_file_blocked_at_execution_for_non_admin(monkeypatch, tmp_path):
     # Execution-level gate: a non-admin owner must be refused even if the tool
-    # reaches execute_tool_block.
+    # reaches execute_tool_block (including single-user / auth-not-configured).
     import src.tool_execution as te
+    import src.tool_security as ts
+
     monkeypatch.setattr(te, "_owner_is_admin", lambda owner: False)
-    ws = tempfile.mkdtemp()
-    p = os.path.join("/tmp", "ef_block.txt")
-    open(p, "w").write("a\n")
+    monkeypatch.setattr(ts, "owner_is_admin_or_single_user", lambda owner: False)
+    p = tmp_path / "ef_block.txt"
+    p.write_text("a\n", encoding="utf-8")
     _desc, result = await execute_tool_block(
-        ToolBlock("edit_file", json.dumps({"path": p, "old_string": "a", "new_string": "b"})),
+        ToolBlock("edit_file", json.dumps({"path": str(p), "old_string": "a", "new_string": "b"})),
         owner="bob",
     )
     assert result.get("exit_code") == 1 and "admin" in result.get("error", "").lower()
-    os.unlink(p)
 
 
 # ── Behavior ──────────────────────────────────────────────────────────────
