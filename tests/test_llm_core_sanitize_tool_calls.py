@@ -74,9 +74,10 @@ def test_sanitize_merges_consecutive_user_messages():
     ]
     out = _sanitize_llm_messages(messages)
 
-    # Only consecutive user messages should be merged.
-    # Consecutive system/assistant messages are left as-is. Orphan tool results
-    # (no preceding assistant tool_calls) are dropped before provider send.
+    # Consecutive user messages are merged into one.
+    # Consecutive system/assistant messages are left as-is.
+    # Orphan tool messages (no preceding assistant with tool_calls) are
+    # dropped by the adjacency repair pass per the OpenAI spec.
     assert len(out) == 5
     assert out[0] == {"role": "system", "content": "System message 1"}
     assert out[1] == {"role": "system", "content": "System message 2"}
@@ -137,7 +138,6 @@ def test_build_anthropic_payload_alternating_roles():
     assert len(anth_messages) == 1
     assert anth_messages[0]["role"] == "user"
     assert anth_messages[0]["content"] == "web search results\n\nuser query"
-
 
 
 
