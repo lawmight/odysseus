@@ -217,6 +217,18 @@ When `cloud-agent-install.sh` generates the password, it stores it in `data/admi
 
 No project-wide linter is configured.
 
+### Pull requests (before `gh pr create` or ManagePullRequest)
+
+The **Check PR description** workflow enforces five rules (Summary, Linked Issue, Type of Change, checklist, How to Test). See [docs/guides/UPSTREAM_PR_GUIDELINES.md](docs/guides/UPSTREAM_PR_GUIDELINES.md#the-five-checks).
+
+```bash
+bash scripts/scaffold-pr-body.sh --issue NNNN --summary "What changed and why (20+ chars)." -o pr-body.md
+node scripts/validate-pr-body.js --explain pr-body.md
+bash scripts/ci-preflight.sh --fork --require-pr-body
+```
+
+Do not paste Sourcery/Cubic/CodeRabbit summaries as the only PR body. `pr-body.md` is gitignored.
+
 ### Tests
 
 ```bash

@@ -10,6 +10,9 @@ venv/
 .venv/
 *.egg
 
+# Local PR description draft (scripts/scaffold-pr-body.sh)
+pr-body.md
+
 # Environment
 .env
 .env.bak.*

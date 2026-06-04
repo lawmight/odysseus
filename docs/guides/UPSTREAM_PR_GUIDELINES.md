@@ -15,7 +15,7 @@ How to open pull requests that match **pewdiepie-archdaemon/odysseus** maintaine
 | Automated gates | `test`, `syntax`, `secrets`, `docker-*`, Check PR description | Check PR description (+ manual checks per CONTRIBUTING) |
 | Size | Small, focused | Same — upstream merges are usually 1–2 files |
 
-**Rule of thumb:** Green on the fork is a **superset** of upstream’s automated bar today. Upstream still expects issue-first workflow and a complete PR template.
+**Rule of thumb:** Green on the fork is a **superset** of upstream’s automated bar today. Upstream still expects an issue-first workflow and a complete PR template.
 
 ---
 
@@ -48,10 +48,11 @@ Sample: **50** recently merged PRs on `pewdiepie-archdaemon/odysseus` (2026-06-0
 1. Search [upstream issues](https://github.com/pewdiepie-archdaemon/odysseus/issues) and [upstream PRs](https://github.com/pewdiepie-archdaemon/odysseus/pulls).
 2. One bug or feature per PR; no drive-by refactors.
 3. Run preflight (see below).
-4. Validate the PR body locally:
+4. Scaffold and validate the PR body locally:
 
    ```bash
-   node scripts/validate-pr-body.js path/to/pr-body.md
+   bash scripts/scaffold-pr-body.sh --issue NNNN --summary "What changed and why" -o pr-body.md
+   node scripts/validate-pr-body.js --explain pr-body.md
    ```
 
 ### LLM / Cloud Agents
@@ -62,17 +63,31 @@ For **Cursor-specific** work on the fork, also read [`.cursor/BUGBOT.md`](../../
 
 ---
 
+## The five checks
+
+The **Check PR description** workflow fails the PR (merge **UNSTABLE**) when any of these are missing. Local `node scripts/validate-pr-body.js` uses the same rules.
+
+| # | Check | Requirement | Common failure |
+|---|-------|-------------|----------------|
+| 1 | **Summary** | ≥ 20 characters after stripping HTML comments | Placeholder text, or only "fix" / "docs only" |
+| 2 | **Linked Issue** | `#NNN` or `/issues/NNN` in that section | Empty `Fixes #`; fork has issues disabled |
+| 3 | **Type of Change** | At least one `- [x]` checkbox | All boxes left `[ ]` |
+| 4 | **Checklist** | `- [x] I searched` present in body | Duplicate-search line not checked |
+| 5 | **How to Test** | At least one numbered step (`1. …`) | "TBD", empty section, bullets only |
+
+**Scaffold a passing body:**
+
+```bash
+bash scripts/scaffold-pr-body.sh --issue 1958 --summary "One paragraph: what changed and why." -o pr-body.md
+node scripts/validate-pr-body.js --explain pr-body.md
+bash scripts/ci-preflight.sh --fork --pr-body pr-body.md
+```
+
+Template source: [`.github/pr-body-scaffold.md`](../../.github/pr-body-scaffold.md). Optional git hook: `scripts/git-hooks/pre-push-pr-body.sample`.
+
 ## Required PR description (enforced by bot)
 
-The workflow [`.github/scripts/check-pr-description.js`](../../.github/scripts/check-pr-description.js) runs on both repos. All must pass:
-
-| Section | Requirement |
-|---------|-------------|
-| **Summary** | ≥ 20 characters of real text (HTML comments stripped) |
-| **Linked Issue** | `Fixes #NNN`, bare `#NNN`, or `https://github.com/.../issues/NNN` |
-| **Type of Change** | At least one `- [x]` checkbox |
-| **Checklist** | `- [x] I searched` (duplicate-search line) |
-| **How to Test** | At least one numbered step (`1. …`) |
+The workflow [`.github/scripts/check-pr-description.js`](../../.github/scripts/check-pr-description.js) runs on both repos. All five checks above must pass.
 
 Copy structure from [`.github/pull_request_template.md`](../../.github/pull_request_template.md). Do not rely on auto-generated review summaries (Sourcery/Cubic/CodeRabbit) as your only description.
 
@@ -89,8 +104,8 @@ bash scripts/ci-preflight.sh --fork
 # Upstream-oriented (skips Docker unless compose/Dockerfile changed on branch)
 bash scripts/ci-preflight.sh --upstream
 
-# Include PR body check
-bash scripts/ci-preflight.sh --fork --pr-body /tmp/my-pr-body.md
+# Uses ./pr-body.md automatically when present, or pass --pr-body FILE
+bash scripts/ci-preflight.sh --fork --require-pr-body
 ```
 
 Refresh [CI_PARITY.md](./CI_PARITY.md):
