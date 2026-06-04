@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from src.providers.cursor_agent import cursor_agent_tool_call_chunks
 
@@ -42,6 +43,37 @@ def test_cursor_agent_tool_call_failed_emits_tool_output():
     assert payload["type"] == "tool_output"
     assert payload["exit_code"] == 1
     assert "not found" in payload["output"]
+
+
+def test_cursor_agent_generate_image_without_workspace_is_generic():
+    """No workspace -> generic tool card (no gallery), still a valid tool_output."""
+    chunks = cursor_agent_tool_call_chunks(
+        _ToolEvent("generateImage", "completed", {"prompt": "a cat"}, result={"status": "ok"})
+    )
+    assert len(chunks) == 1
+    payload = json.loads(chunks[0].removeprefix("data: ").strip())
+    assert payload["type"] == "tool_output"
+    assert payload["tool"] == "generateImage"
+    assert "image_url" not in payload
+
+
+def test_cursor_agent_generate_image_publishes_gallery_url(tmp_path, monkeypatch):
+    """With a workspace, generateImage is delegated to the shared gallery path (B2a)."""
+    monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
+    img = tmp_path / "gen.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    chunks = cursor_agent_tool_call_chunks(
+        _ToolEvent("generateImage", "completed", {"prompt": "blue square"}, result={"path": str(img)}),
+        workspace=str(tmp_path),
+        model="composer-2.5",
+    )
+    assert len(chunks) == 1
+    payload = json.loads(chunks[0].removeprefix("data: ").strip())
+    assert payload["type"] == "tool_output"
+    assert payload["tool"] == "generate_image"
+    assert payload["image_url"].startswith("/api/generated-image/")
+    filename = payload["image_url"].rsplit("/", 1)[-1]
+    assert (Path("data/generated_images") / filename).is_file()
 
 
 def test_heartbeat_interval_sec_invalid_env(monkeypatch):
