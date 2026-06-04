@@ -59,6 +59,18 @@ def test_nvfp4_search_result_is_not_gguf_or_cpu_offload():
     assert hit["run_mode"] != "cpu_offload"
 
 
+def _single_5060ti_system():
+    return {
+        "has_gpu": True,
+        "backend": "cuda",
+        "gpu_name": "NVIDIA GeForce RTX 5060 Ti",
+        "gpu_vram_gb": 31.0,
+        "gpu_count": 1,
+        "available_ram_gb": 128.0,
+        "total_ram_gb": 128.0,
+    }
+
+
 def test_selected_gguf_quant_is_strict_not_lower_quant_fallback():
     model = {
         "name": "local/Huge-GGUF",
@@ -69,7 +81,7 @@ def test_selected_gguf_quant_is_strict_not_lower_quant_fallback():
         "context_length": 4096,
     }
 
-    system = _dual_5060ti_system()
+    system = _single_5060ti_system()
     system["available_ram_gb"] = 80.0
     system["total_ram_gb"] = 80.0
     fit = analyze_model(model, system, target_quant="Q8_0")
