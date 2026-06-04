@@ -1,404 +1,234 @@
-# Plan B: Cursor SDK for Odysseus Agent Tab
+# Plan B v2: Cursor SDK engine for Odysseus Agent mode
 
-**Status:** **Phase 1 shipped** on `main` @ `0a70975` ([#17](https://github.com/lawmight/odysseus/pull/17)); Phases 2–4 pending  
-**Target repo:** Odysseus  
-**Verified against:** Odysseus workspace (2026-06-01), Nia (`abe7140b`, `71741e4c`), PyPI `cursor-sdk>=0.1.6`
+**Status:** **Phase 1 shipped** on `main` ([#17](https://github.com/lawmight/odysseus/pull/17), commit `0a70975`); Phases 2-4 reframed below after Plan A/C/C+ landed.
+**Target repo:** Odysseus
+**Reconciled against:** `main` @ `2a0e5de` (2026-06-04), [`cursor-sdk-capability-matrix.md`](./cursor-sdk-capability-matrix.md), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
 
----
-
-## 1. Goal
-
-Add an optional **“Cursor Agent”** backend for Odysseus’s **Agent** mode (`chat_mode != "chat"`, uses `stream_agent_loop()` today), so power users can run Cursor’s full agent (tools, thinking, MCP, plan mode) from the Odysseus UI—BYO `CURSOR_API_KEY`—alongside the existing native loop.
-
-**Clarification:** README credits [opencode](https://github.com/anomalyco/opencode) as architectural inspiration; the **implemented** agent is **`src/agent_loop.py`** + **`src/agent_tools.py`** (Python), not a subprocess to the opencode binary. This plan adds Cursor as an **alternate agent engine**, not “install opencode again.”
+> This is the **second pass**. The original Plan B was written before Plan A/C/C+ and before Phase 1 existed, so several "future" phases were either already solved by shared adapter work or need a different framing. The capability matrix is the machine-readable gap list; this doc is the human roadmap and decision log.
 
 ---
 
-## 2. Relationship to Plan A (Chat provider)
+## 1. Status and scope
 
-| Aspect | Plan A (Chat) | Plan B (Agent tab) |
-|--------|---------------|-------------------|
-| Entry | `stream_llm()` / chat_mode `"chat"` | `stream_agent_loop()` / agent mode |
-| Odysseus tools | Disabled (`tools=None`) | **Conflict risk** — Cursor runs its own tools |
-| User expectation | Q&A, fast | Multi-step tasks, tool cards |
-| v1 runtime | Local `launch_bridge` | Local + optional Cloud (later) |
+| Layer | State | Where |
+|-------|-------|-------|
+| Agent mode routes to Cursor engine | shipped | [`routes/chat_routes.py`](../../routes/chat_routes.py) agent branch (`_detect_provider == "cursor"`) |
+| Cursor agent stream loop | shipped | [`src/providers/cursor_agent.py`](../../src/providers/cursor_agent.py) `stream_cursor_agent_loop` |
+| Tool events -> Agent UI cards | shipped | `cursor_agent_tool_call_chunks` -> `tool_start` / `tool_output` |
+| Durable agent resume | shipped (shared with Chat) | `sessions.cursor_agent_id`, `cursor_adapter.build_cursor_user_message` |
+| Context (memory / RAG / web) into the agent prompt | mostly shipped via shared preface | see Section 5 |
+| Skills semantics on Cursor engine | gap (product) | Section 5.2 |
+| Background auto-continue on Cursor sessions | gap (small code) | Section 5.3 |
+| MCP into the Cursor agent | documented-only | Section 6 |
+| Cloud Cursor agents in Odysseus | wont-fix v1 | Section 7 |
 
-**Recommendation:** Ship Plan A first; Plan B reuses `cursor_adapter` session/bridge plumbing but **different** stream mapper (tool events → Odysseus `tool_start` / `tool_output`).
-
----
-
-## 3. SDK choice (same as Plan A)
-
-| Item | Value |
-|------|-------|
-| Package | `cursor-sdk>=0.1.6` (PyPI latest verified 2026-06-01) |
-| Async API | `AsyncClient.launch_bridge`, `AsyncAgent.send`, `AsyncRun.messages()` |
-| Models | From `GET https://api.cursor.com/v1/models` or `client.models.list()` |
-| Example model IDs | `composer-2.5`, `composer-2` (always refresh from API) |
-
-```python
-from cursor_sdk import AsyncClient, LocalAgentOptions, SendOptions
-
-async with await AsyncClient.launch_bridge(workspace=cwd) as client:
-    async with await client.agents.create(
-        model="composer-2.5",
-        api_key=api_key,
-        local=LocalAgentOptions(cwd=cwd),
-    ) as agent:
-        run = await agent.send(
-            user_prompt,
-            SendOptions(mode="agent"),  # or "plan" for plan-first
-        )
-        async for msg in run.messages():
-            ...
-```
-
-**Plan mode (SDK):** `mode="plan"` on create or `SendOptions(mode="agent")` on follow-up (Nia-verified python.md).
+**v2 covers:** finishing the documentation of Phase 1 as-built, reframing Phase 2 around what already exists, deciding the policy items in the Decision log (Section 12), and listing the implementation backlog ([`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md)). It does **not** mandate the MCP bridge or cloud runtime.
 
 ---
 
-## 4. Odysseus Agent architecture today
+## 2. Goal (unchanged intent)
 
-### 4.1 Entry point
+Add an optional **Cursor agent engine** for Odysseus Agent mode (`chat_mode == "agent"`) so power users can run Cursor's own agent (tools, thinking, plan mode) from the Odysseus UI with their own `CURSOR_API_KEY`, alongside the native [`src/agent_loop.py`](../../src/agent_loop.py) engine.
 
-```784:807:routes/chat_routes.py
-            else:
-                # ── Agent mode: full agent loop with tools ──
-                ...
-                    async for chunk in stream_agent_loop(
-                        sess.endpoint_url,
-                        sess.model,
-                        messages,
-                        headers=sess.headers,
-                        ...
-                        session_id=session,
-                        ...
-                    ):
-```
-
-### 4.2 Native loop contract
-
-```1237:1245:src/agent_loop.py
-    Yields SSE events:
-      - data: {"delta": "text"}
-      - data: {"type": "tool_start", "tool": "...", ...}
-      - data: {"type": "tool_output", "tool": "...", ...}
-      - data: {"type": "agent_step", "round": N}
-      - data: {"type": "metrics", "data": {...}}
-      - data: [DONE]
-```
-
-Frontend handlers: `static/js/chat.js` (`tool_start`, `tool_output`, `agent_step`), `static/js/chatStream.js`, compare stream.
-
-### 4.3 Native tool ecosystem
-
-- Built-ins in `src/agent_tools.py` + `TOOL_SECTIONS` in `agent_loop.py`
-- MCP via `get_mcp_manager()` in agent loop
-- RAG tool selection, memory, skills injection via `chat_processor.py` (`agent_mode=True`)
-
-**Cursor agent has its own tools** (`read_file`, `run_terminal_cmd`, `mcp`, etc.). Running **both** loops (Odysseus `stream_agent_loop` + Cursor tools) in one turn will duplicate work and confuse UX.
+**Invariant (still true):** never run the native `stream_agent_loop` and the Cursor agent in the same turn. They each carry their own tool ecosystem; running both duplicates work and confuses the UI.
 
 ---
 
-## 5. Design decision: three agent backends
+## 3. Relationship to Plan A / C / C+
 
-Introduce `agent_engine` on endpoint or session:
+Plan A/C built a **shared adapter** ([`src/providers/cursor_adapter.py`](../../src/providers/cursor_adapter.py)) and a **Chat mapper** (`stream_cursor_chat`). Plan B reuses the adapter and adds an **Agent mapper** (`stream_cursor_agent_loop`). One bridge pool, two mappers.
 
-| Engine | Behavior |
-|--------|----------|
-| `odysseus` (default) | Current `stream_agent_loop()` |
-| `cursor_local` | Cursor SDK local bridge |
-| `cursor_cloud` (later) | Cloud Agents API with repo config |
+| Concern | Chat (Plan A/C/C+) | Agent (Plan B) |
+|---------|--------------------|----------------|
+| Entry | `stream_llm` -> `stream_cursor_chat` | `stream_cursor_agent_loop` |
+| Send mode | default | `SendOptions(mode="agent")` |
+| Tool policy | allowlist (`CURSOR_CHAT_TOOL_ALLOWLIST` = `{generateImage}`) | all tools -> generic `tool_start` / `tool_output` |
+| `generateImage` -> gallery | yes (`cursor_tool_call_chunks`) | see Decision D1 |
+| Bridge / resume / cancel / images | shared `cursor_adapter` | shared `cursor_adapter` |
+| Heartbeat SSE | shared pattern | `_heartbeat_interval_sec` in `cursor_agent.py` |
 
-**Selection:** `ModelEndpoint.provider == "cursor"` AND `chat_mode == "agent"` → `stream_cursor_agent_loop()`.
-
-When Cursor engine is active:
-
-- **Disable** Odysseus native tool loop for that request (do not call `stream_llm` with tools inside agent_loop).
-- Optionally still inject **read-only** context (memories, RAG) into the **prompt text** prefix, not as parallel tool APIs.
+Anything in the "shared" rows is **inherited** and must not be re-specified or reimplemented in Plan B work.
 
 ---
 
-## 6. Stream mapping: Cursor → Odysseus Agent UI
+## 4. As-built Phase 1 (do not redo)
 
-### 6.1 Cursor SDK message types (Nia-verified)
+`stream_cursor_agent_loop` ([`src/providers/cursor_agent.py`](../../src/providers/cursor_agent.py)) already:
 
-| `message.type` | Map to |
-|----------------|--------|
-| `assistant` (text blocks) | `data: {"delta": text}` |
-| `thinking` | `data: {"delta": text, "thinking": true}` |
-| `tool_call` (`status`: running/completed) | See below |
-| `status` | Optional status line in UI |
-| `system` | Ignore or log |
+- validates the endpoint and SDK availability, then resolves the API key and workspace `cwd` via the shared adapter helpers;
+- builds the send payload with `build_cursor_user_message(messages, resume=...)`, so the **system prefix + last user message + image attachments** reach the agent on every turn (same helper Chat uses);
+- creates a new Cursor agent or resumes `cursor_agent_id`, emitting `cursor_agent_id` SSE on first create so [`routes/chat_routes.py`](../../routes/chat_routes.py) can persist it via `session_manager.set_cursor_agent_id`;
+- sends with `{"model": model, "mode": "agent"}`;
+- streams `assistant` -> `delta`, `thinking` -> `delta` + `thinking: true`, `tool_call` -> `cursor_agent_tool_call_chunks`, `error` -> SSE error;
+- enforces an optional `max_tool_calls` budget (from `agent_max_tool_calls` setting) and emits `budget_exceeded`;
+- emits a periodic `: heartbeat` comment so the tunnel stays alive during long tool runs;
+- registers the run for `cancel_cursor_run` (Stop button) and cleans up on disconnect;
+- emits `usage` with `total_time` on completion, then `[DONE]`.
 
-### 6.2 Tool events
+### 4.1 SSE contract differences from the native loop
 
-Cursor `tool_call` envelope (REST/SSE, Nia-verified):
+| Event | Native `stream_agent_loop` | Cursor agent | Note |
+|-------|----------------------------|--------------|------|
+| Completion metrics | `type: metrics` | `type: usage` (`total_time` only) | `chat_routes` agent branch handles `usage`; token counts may be absent |
+| Round markers | `type: agent_step` with `round` | not emitted | UI tolerates absence; Cursor runs as one `send()` |
+| Tool cards | `tool_start` / `tool_output` | same shape | parity |
 
-```typescript
-interface ToolCallEventData {
-  callId: string;
-  name: string;       // e.g. read_file, run_terminal_cmd, mcp
-  status: "running" | "completed";
-  args?: JsonValue;
-  result?: JsonValue;
-  truncated?: { args?: true; result?: true };
-}
-```
+### 4.2 Phase 1 acceptance checklist (manual desk QA)
 
-**Map to Odysseus:**
+These were never closed and are **QA, not research**:
 
-| Cursor | Odysseus |
-|--------|----------|
-| `status: "running"` | `data: {"type": "tool_start", "tool": name, "command": short_args_summary}` |
-| `status: "completed"` | `data: {"type": "tool_output", "tool": name, "output": stringify(result)[:N]}` |
+- [ ] Agent mode + Cursor endpoint: tool cards appear (`tool_start` / `tool_output`).
+- [ ] Multi-turn: second message resumes the same `cursor_agent_id`, context preserved.
+- [ ] Stop button cancels the run (`cancel_cursor_run`).
+- [ ] Native endpoint still uses `stream_agent_loop` (regression).
+- [ ] Rapid double-send handled gracefully (no `agent_busy` crash).
+- [ ] Compare / Research / incognito do not invoke the Cursor engine.
 
-**Caveats (docs):** Tool `args`/`result` shapes are **not stable**—treat as untyped; stringify defensively; never `eval`.
-
-### 6.3 “Rounds”
-
-Odysseus uses `agent_step` with `round` for multi-round native loop. Cursor runs are one `send()` with internal steps:
-
-- Emit `data: {"type": "agent_step", "round": 1}` at run start (optional).
-- Or map `on_step` / `StepCompleted` from `SendOptions(on_step=…)` to increment round (SDK).
-
-### 6.4 Metrics
-
-On `run.wait()`:
-
-```python
-result.status       # finished | error | cancelled | expired
-result.duration_ms
-result.result       # final text
-```
-
-Emit:
-
-```python
-yield f'data: {json.dumps({"type": "metrics", "data": {
-    "response_time": result.duration_ms / 1000,
-    "model": model_id,
-    "usage_source": "cursor",
-}})}\n\n'
-```
-
-Token counts may be unavailable—UI already tolerates estimates.
+Automated coverage today: [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py) (mapper + heartbeat) and the routing regression in [`tests/test_cursor_plan_c_plus.py`](../../tests/test_cursor_plan_c_plus.py) (`test_chat_routes_uses_cursor_agent_loop_in_agent_mode`).
 
 ---
 
-## 7. New module layout
+## 5. Context and Odysseus features (reframed Phase 2)
+
+The original Phase 2 said "prepend memories/RAG into `send()`." Most of that already happens, because Agent mode builds the same context preface as before and passes `ctx.messages` straight into the Cursor loop.
+
+### 5.1 Context injection (mostly shipped)
+
+Flow:
 
 ```
-src/
-  providers/
-    cursor_adapter.py      # shared: bridge, agent resume, list_models
-    cursor_chat.py         # Plan A: stream_cursor_chat → stream_llm contract
-    cursor_agent.py        # Plan B: stream_cursor_agent_loop → agent_loop contract
+chat_routes prepare_chat (agent_mode=True)
+  -> ChatProcessor.prepare_context  (memory + RAG + web + URL fetch)   src/chat_processor.py
+  -> ctx.messages                                                       (system preface + history)
+  -> stream_cursor_agent_loop(messages)
+  -> build_cursor_user_message(resume=...)                              src/providers/cursor_adapter.py
+        resume:    "System instructions: <prefix>" + last user + images
+        first turn: full transcript via build_cursor_prompt + images
 ```
 
-### 7.1 `stream_cursor_agent_loop()` signature
+So memory, RAG documents, and web results already reach the Cursor agent as system/context text. **No rebuild of `build_cursor_user_message` is needed.** v2 task here is documentation: state clearly that Cursor agent context is delivered as prompt text (not Odysseus tool APIs), and that on resume the SDK agent also holds prior conversation memory.
 
-Mirror `stream_agent_loop` kwargs where sensible:
+Vision is shipped too: `build_cursor_user_message` already attaches `SDKImage` from attachments (matrix Section 7). Remaining image edge cases (`SDKImage.url_image` for remote URLs) stay backlog, not Plan B v1.
 
-```python
-async def stream_cursor_agent_loop(
-    endpoint_url: str,       # cursor://local
-    model: str,
-    messages: list[dict],
-    *,
-    api_key: str,
-    cwd: str,
-    session_id: str | None = None,
-    temperature: float = 0.3,   # may map to model.params if supported
-    max_tool_calls: int = 0,    # interpret as Cursor-side budget hint only
-    owner: str | None = None,
-) -> AsyncGenerator[str, None]:
+### 5.2 Skills (product decision -> D4)
+
+[`ChatProcessor.prepare_context`](../../src/chat_processor.py) injects a **skills index** in agent mode that instructs the model to call `manage_skills(action='view', ...)`. The Cursor agent **cannot call Odysseus tools**, so that index is misleading noise on Cursor sessions. Target behavior (pending D4): when the endpoint is Cursor and mode is agent, omit the tool-oriented skills index; optionally inject a small number of skill **bodies** as read-only untrusted context instead.
+
+### 5.3 Background auto-continue (small code -> B2c)
+
+[`src/bg_monitor.py`](../../src/bg_monitor.py) `_drain_agent` always calls `stream_agent_loop`. For a Cursor-backed session this runs the **native** engine against a `cursor://local` endpoint, which is wrong. v2 fix: detect Cursor sessions in the monitor and skip the native auto-continue (post a short system note) rather than silently running the wrong engine. A full Cursor follow-up path is backlog (B-future).
+
+### 5.4 Tool mapper hygiene (optional -> B2d)
+
+There are two mappers: `cursor_tool_call_chunks` (Chat, allowlist + `generateImage` gallery) and `cursor_agent_tool_call_chunks` (Agent, all tools, generic). They share `_format_tool_result` style logic. A unified helper is desirable but only worth it if the diff stays small; otherwise leave the two mappers and just share the `generateImage` publish path (D1).
+
+---
+
+## 6. MCP (Phase 3 - documented, not implemented in v2)
+
+| Approach | v2 stance |
+|----------|-----------|
+| Workspace `.cursor/mcp.json` in the agent `cwd` | **Documented default.** The bridge already runs in `cwd`, so MCP servers configured there are picked up by the Cursor agent. |
+| Map Odysseus `McpServer` DB rows -> `SendOptions(mcp_servers=...)` | Optional follow-up PR (B3). Requires a security review: Odysseus MCP secrets would be handed to the Cursor bridge. |
+| `agent.reload()` after MCP file edits | Backlog note (matrix `agent.reload`). |
+
+Plan B v1 does **not** wire the Odysseus MCP admin UI into the Cursor agent. See Decision D2.
+
+---
+
+## 7. Cloud Cursor agents (Phase 4 appendix - wont-fix v1)
+
+The Cloud Agents API (repos, auto-create-PR, hosted VMs) is a separate product surface. The capability matrix marks all `cloud.*` rows `n/a` / `wont-fix` for Odysseus v1. If Odysseus ever wants this, it should be a **new plan** ("Cursor Cloud Agents in Odysseus"), not a Plan B phase. For now Odysseus uses the **local bridge** only. See Decision D3.
+
+---
+
+## 8. Callers that must stay native
+
+Cursor must not leak into these paths; they call the LLM separately and have no Cursor mapping:
+
+| Path | Guard | File |
+|------|-------|------|
+| Compare | mode guard | [`routes/chat_routes.py`](../../routes/chat_routes.py) |
+| Deep Research | mode guard | [`routes/chat_routes.py`](../../routes/chat_routes.py), [`routes/research_routes.py`](../../routes/research_routes.py) |
+| Utility / vision resolver | `exclude_cursor` | [`src/endpoint_resolver.py`](../../src/endpoint_resolver.py) |
+| Background task HTTP | no `cursor://` HTTP fallback | [`src/endpoint_resolver.py`](../../src/endpoint_resolver.py) |
+| Background auto-continue | **to fix** (B2c) | [`src/bg_monitor.py`](../../src/bg_monitor.py) |
+
+---
+
+## 9. Testing and QA
+
+Automated (run after any Plan B change):
+
+```bash
+pytest tests/test_cursor_agent.py tests/test_cursor_plan_c_plus.py \
+       tests/test_cursor_adapter.py tests/test_cursor_plan_c.py -q
 ```
 
-### 7.2 Branch in `chat_routes.py`
-
-```python
-if _is_cursor_endpoint(sess.endpoint_url):
-    from src.providers.cursor_agent import stream_cursor_agent_loop
-    chunk_iter = stream_cursor_agent_loop(...)
-else:
-    chunk_iter = stream_agent_loop(...)
-```
+Manual desk QA: Section 4.2 checklist (needs a real `CURSOR_API_KEY` and the SDK bridge on the Odysseus host).
 
 ---
 
-## 8. MCP and skills
+## 10. Upstream PR packaging (2026)
 
-| Feature | Native agent | Cursor agent |
-|---------|--------------|--------------|
-| Odysseus MCP servers (`McpServer` DB) | Wired in agent_loop | **Not automatic** — pass via `SendOptions(mcp_servers=…)` or `.cursor/mcp.json` in `cwd` |
-| Skills (`skills_manager`) | Injected in agent_mode | Inject skill **text** into prompt only, or configure Cursor project rules |
-| Memory / RAG | Tools + context | Prefix context in first `send()` |
+### 10.1 What is already on fork `main`
 
-**v1 recommendation:** Document that Cursor Agent mode uses **workspace `.cursor/mcp.json`** for MCP, not the Odysseus MCP admin UI—unless you implement explicit `mcp_servers` mapping from `McpServer` rows (Phase 3).
+| Work | Commit / PR |
+|------|-------------|
+| Plan A/C Chat BYOK | `3a1b985` (PR #2) |
+| Plan C+ generateImage in Chat | folded into `main` |
+| Plan B Phase 1 Agent engine | `0a70975` ([#17](https://github.com/lawmight/odysseus/pull/17)) |
 
----
+### 10.2 Upstream handoff (pewdiepie-archdaemon/odysseus)
 
-## 9. Cloud Agents (Phase 2+)
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) points contributors at `pewdiepie-archdaemon/odysseus`. The Cursor work lives on `lawmight/odysseus`. For an upstream review, prefer a **two-PR narrative** unless the fork diff is already squashed:
 
-Cloud API (Nia-verified):
+1. `feat(chat): Cursor BYOK provider with Chat parity (cursor-sdk)` - Plan A/C + C+.
+2. `feat(agent): optional Cursor SDK engine for Agent mode` - Plan B Phase 1, depends on (1).
 
-- `POST /v1/agents` — create agent + initial run
-- `POST /v1/agents/{id}/runs` — follow-up (409 if busy)
-- `GET /v1/agents/{id}/runs/{runId}/stream` — SSE
+Follow-ups (B2a-B4 in the backlog) are **not** blockers for reviewing (1) and (2).
 
-Requires UI for:
+**Reviewer guide to include in the PR body:**
 
-- GitHub repo URL, `startingRef`, `autoCreatePR`
-- Link-out to `agent.url` on cursor.com
+- Large diff; optional dependency `requirements-cursor.txt` (feature is inert without the SDK).
+- The SDK bridge runs on the Odysseus host, not inside the default Docker image.
+- opencode acknowledgment unchanged ([`ACKNOWLEDGMENTS.md`](../../ACKNOWLEDGMENTS.md)); Plan B adds Cursor as an alternate engine, it does not replace the native loop.
+- This **supersedes** the old Plan C guidance to "block Agent + Cursor" - Agent is supported since Phase 1.
 
-Odysseus settings panel extension:
-
-```json
-{
-  "runtime": "cloud",
-  "repos": [{"url": "https://github.com/org/repo", "startingRef": "main"}],
-  "auto_create_pr": false
-}
-```
-
-**Billing:** Same Cursor usage pools; SDK runs tagged “SDK” in dashboard (per python.md).
+No push to upstream is part of this documentation pass.
 
 ---
 
-## 10. Database and settings
-
-Reuse Plan A columns:
-
-- `ModelEndpoint.provider = "cursor"`
-- `ModelEndpoint.provider_config` JSON
-
-Add session fields:
-
-```sql
-ALTER TABLE sessions ADD COLUMN cursor_agent_id TEXT;
-ALTER TABLE sessions ADD COLUMN agent_engine TEXT DEFAULT 'odysseus';
-```
-
-Or store in `settings` keyed by `session_id` to avoid migration (weaker for multi-worker).
-
----
-
-## 11. Admin UX
-
-1. Model endpoint: **Cursor Agent (local)** — API key + workspace path.
-2. Toggle per endpoint: **Allow in Agent tab** / **Allow in Chat only** (two flags in `provider_config`).
-3. Global setting (optional): `default_agent_engine` = `odysseus` | `cursor`.
-
-Chat mode selector unchanged; engine picked by endpoint + mode.
-
----
-
-## 12. Implementation phases
-
-### Phase 1 — Parallel engine (local) — shipped
-
-- [x] `stream_cursor_agent_loop()` with tool_start/tool_output mapping
-- [x] `chat_routes.py` branch on cursor endpoint + agent mode
-- [x] Disable `stream_agent_loop` when cursor active
-- [x] Session `cursor_agent_id` persistence + resume
-- [ ] Manual test: file edit tool shows in UI (desk QA)
-
-### Phase 2 — Context injection
-
-- [ ] Prepend memories/RAG/system preset into `send()` text
-- [ ] Vision: map Odysseus attachments to `UserMessage(images=…)`
-
-### Phase 3 — MCP bridge
-
-- [ ] Export Odysseus `McpServer` configs → `SendOptions(mcp_servers=…)` per run
-- [ ] Document security (secrets in env)
-
-### Phase 4 — Cloud
-
-- [ ] `cursor_cloud` engine + repo UI
-- [ ] REST SSE client path (optional if SDK cloud is enough)
-
----
-
-## 13. Things to be careful about
-
-1. **Double agent loops:** Never call `stream_agent_loop` and Cursor tools in the same turn.
-2. **409 agent_busy:** Agent tab users spam clicks — queue sends per session.
-3. **Workspace safety:** Cursor local agent can run shell commands in `cwd`—treat `cwd` as a security boundary (same as Odysseus shell tools).
-4. **Unstable tool payloads:** Do not build Odysseus tool routing on Cursor `name` beyond display.
-5. **Compare / Research / Tasks:** Each calls LLM separately—decide if Cursor endpoints appear there (default: **hide** for v1).
-6. **Background jobs:** `src/bg_monitor.py` uses `stream_agent_loop` — exclude cursor endpoints or implement cursor variant.
-7. **Public beta API:** Pin `cursor-sdk` version; monitor Cloud Agents changelog.
-8. **Team Admin API keys:** Not supported — validate and error.
-9. **Bridge in Docker:** Same as Plan A; document clearly.
-10. **Acknowledgments:** README says “built on opencode”—PR should say “optional Cursor agent engine via cursor-sdk” without removing opencode credit.
-
----
-
-## 14. Testing checklist
-
-- [ ] Agent mode + Cursor endpoint: tool cards appear (`tool_start` / `tool_output`)
-- [ ] Multi-turn: second message uses same `agent_id`, context preserved
-- [ ] Stop button cancels run (`run.cancel()`)
-- [ ] Native endpoint still uses `stream_agent_loop` (regression)
-- [ ] Skills/memory: verify injected context appears in reply (manual)
-- [ ] `agent_busy`: rapid double-send handled gracefully
-- [ ] Incognito / compare / research do not accidentally invoke cursor engine
-
----
-
-## 15. PR strategy (upstream)
-
-- **Depends on:** Plan A shared `cursor_adapter.py` (bridge + models + auth)
-- **Title:** `feat(agent): optional Cursor SDK engine for Agent mode`
-- Split commits: adapter shared → chat → agent
-- Feature flag: `provider=cursor` only when `cursor-sdk` installed
-
----
-
-## 16. Reference: Odysseus vs Cursor tool UX
-
-**Native (today):**
-
-```python
-# agent_loop yields after executing Odysseus tools locally
-yield f'data: {json.dumps({"type": "tool_start", "tool": tool_name, ...})}\n\n'
-# ... execute ...
-yield f'data: {json.dumps({"type": "tool_output", "tool": tool_name, "output": out})}\n\n'
-```
-
-**Cursor (map from SDK):**
-
-```python
-elif message.type == "tool_call":
-    if message.status == "running":
-        yield f'data: {json.dumps({"type": "tool_start", "tool": message.name, "command": _brief(message.args)})}\n\n'
-    elif message.status in ("completed", "error"):
-        yield f'data: {json.dumps({"type": "tool_output", "tool": message.name, "output": _brief(message.result)})}\n\n'
-```
-
-(Exact attribute names: confirm against `cursor-sdk==0.1.6` types in implementation—SDK uses `SDKToolUseMessage` with `call_id`, `name`, `status`, `args`, `result`.)
-
----
-
-## 17. Nia verification log
+## 11. Nia / repo verification log
 
 | Claim | Source |
 |-------|--------|
-| Agent SSE: `tool_start`, `tool_output`, `agent_step` | Repo `src/agent_loop.py:1237-1245` |
-| Agent route uses `stream_agent_loop` | Repo `routes/chat_routes.py:784-807` |
+| Agent SSE: `tool_start`, `tool_output`, `agent_step` | [`src/agent_loop.py`](../../src/agent_loop.py) |
+| Agent route branches on Cursor provider | [`routes/chat_routes.py`](../../routes/chat_routes.py) `_detect_provider` |
 | Cursor tool_call envelope | Nia `abe7140b` |
-| `409 agent_busy`, stream events | Nia `abe7140b` |
 | `SendOptions(mode=)`, plan/agent modes | Nia `71741e4c` |
 | `cursor-sdk` 0.1.6, AsyncClient | PyPI + Nia `71741e4c` |
-| opencode not in `src/` | Repo grep (acknowledgment only) |
+| Plan B v2 reconciled against `main` @ `2a0e5de` | this pass (2026-06-04) |
+
+Re-query Nia / docs only when `cursor-sdk` bumps past 0.1.6.
 
 ---
 
-## 18. Open questions for maintainers
+## 12. Decision log
 
-1. Should Cursor Agent **replace** or **complement** native agent for default installs?
-2. Is running Cursor bridge inside official Docker image acceptable license/size-wise?
-3. Should cloud Cursor agents appear in Odysseus at all, or link out to cursor.com?
-4. Do we map Odysseus MCP servers automatically (security review)?
+These are the roadcrosses that need a human (maintainer) decision. Recommended defaults reflect a balanced stance; change the Decision column to steer future work.
+
+| ID | Question | Recommended default | Decision | Blocks |
+|----|----------|---------------------|----------|--------|
+| D1 | Should the Agent engine surface `generateImage` via the gallery like Chat (C+)? | Yes - reuse the shared publish path | _default_ | B2a |
+| D2 | Wire Odysseus MCP admin (`McpServer`) into the Cursor agent? | No for v1; document `.cursor/mcp.json`; DB mapping is an optional follow-up after security review | _default_ | B3 |
+| D3 | Support cloud Cursor agents inside Odysseus? | No for v1 (wont-fix); separate plan if ever wanted | _default_ | B4 |
+| D4 | What do skills mean on a Cursor agent session? | Omit the `manage_skills` index; optionally inject skill bodies as read-only text | _default_ | B2b |
+| D5 | Add an `agent_engine` DB column, or infer the engine? | Infer from `provider=cursor` + `chat_mode=agent`; no migration | _default_ | - |
+| D6 | One upstream PR or two? | Two (Chat, then Agent) unless the fork diff is already squashed | _default_ | upstream review |
+
+---
+
+## 13. Backlog
+
+See [`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md) for the ordered implementation epics (B2a-B4) with files, acceptance tests, and matrix row IDs.
