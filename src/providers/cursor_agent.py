@@ -38,31 +38,6 @@ def _heartbeat_interval_sec() -> float:
         return 15.0
 
 
-def _format_tool_result(result: Any) -> str:
-    if result is None:
-        return ""
-    if isinstance(result, str):
-        text = result.strip()
-        return text[:4000] if text else ""
-    try:
-        return json.dumps(result, default=str)[:4000]
-    except (TypeError, ValueError):
-        return str(result)[:4000]
-
-
-def _exit_code_from_result(result: Any, *, default: int = 0) -> int:
-    if isinstance(result, dict):
-        for key in ("exit_code", "exit", "code"):
-            val = result.get(key)
-            if isinstance(val, bool):
-                continue
-            if isinstance(val, int):
-                return val
-            if isinstance(val, str) and val.lstrip("-").isdigit():
-                return int(val)
-    return default
-
-
 def cursor_agent_tool_call_chunks(
     event: Any,
     *,
@@ -91,46 +66,36 @@ def cursor_agent_tool_call_chunks(
             owner=owner,
         )
 
-    status = str(_ca._get_attr(event, "status", "") or "").lower()
-    args = _ca._get_attr(event, "args")
-    command = _ca._tool_command_summary(name, args)
+    _name, status, args = _ca._tool_call_parts(event)
     chunks: List[str] = []
 
     if status == "running":
-        chunks.append(
-            _ca._sse_data({
-                "type": "tool_start",
-                "tool": name,
-                "command": command,
-            })
-        )
+        chunks.append(_ca._tool_start_chunk(name, args))
         return chunks
 
     if status in ("completed", "complete"):
         result = _ca._get_attr(event, "result")
-        output = _format_tool_result(result) or f"{name} completed."
         chunks.append(
-            _ca._sse_data({
-                "type": "tool_output",
-                "tool": name,
-                "command": command,
-                "output": output,
-                "exit_code": _exit_code_from_result(result, default=0),
-            })
+            _ca._generic_tool_output_chunk(
+                name,
+                args,
+                result,
+                default_output=f"{name} completed.",
+                default_exit_code=0,
+            )
         )
         return chunks
 
     if status in _FAILURE_STATUSES:
         result = _ca._get_attr(event, "result")
-        output = _format_tool_result(result) or f"{name} failed ({status})."
         chunks.append(
-            _ca._sse_data({
-                "type": "tool_output",
-                "tool": name,
-                "command": command,
-                "output": output,
-                "exit_code": _exit_code_from_result(result, default=1),
-            })
+            _ca._generic_tool_output_chunk(
+                name,
+                args,
+                result,
+                default_output=f"{name} failed ({status}).",
+                default_exit_code=1,
+            )
         )
         return chunks
 

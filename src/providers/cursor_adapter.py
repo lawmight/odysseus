@@ -555,6 +555,91 @@ def _tool_command_summary(tool_name: str, args: Any) -> str:
     return tool_name
 
 
+def _tool_call_parts(event: Any) -> Tuple[str, str, Any]:
+    """Return normalized (name, status, args) for a Cursor SDK tool_call event."""
+    name = str(_get_attr(event, "name", "") or "")
+    status = str(_get_attr(event, "status", "") or "").lower()
+    args = _get_attr(event, "args")
+    return name, status, args
+
+
+def _format_tool_result(result: Any) -> str:
+    """Format arbitrary Cursor tool results for compact SSE tool cards."""
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        text = result.strip()
+        return text[:4000] if text else ""
+    try:
+        return json.dumps(result, default=str)[:4000]
+    except (TypeError, ValueError):
+        return str(result)[:4000]
+
+
+def _exit_code_from_result(result: Any, *, default: int = 0) -> int:
+    """Best-effort exit-code extraction from unstable Cursor tool result envelopes."""
+    if isinstance(result, dict):
+        for key in ("exit_code", "exit", "code"):
+            val = result.get(key)
+            if isinstance(val, bool):
+                continue
+            if isinstance(val, int):
+                return val
+            if isinstance(val, str) and val.lstrip("-").isdigit():
+                return int(val)
+    return default
+
+
+def _tool_start_chunk(tool_name: str, args: Any, *, ui_tool: Optional[str] = None) -> str:
+    """Build a standard Odysseus tool_start SSE chunk."""
+    return _sse_data({
+        "type": "tool_start",
+        "tool": ui_tool or tool_name,
+        "command": _tool_command_summary(tool_name, args),
+    })
+
+
+def _tool_output_chunk(
+    tool_name: str,
+    args: Any,
+    *,
+    output: str,
+    exit_code: int,
+    ui_tool: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build a standard Odysseus tool_output SSE chunk."""
+    payload: Dict[str, Any] = {
+        "type": "tool_output",
+        "tool": ui_tool or tool_name,
+        "command": _tool_command_summary(tool_name, args)[:200],
+        "output": output,
+        "exit_code": exit_code,
+    }
+    if extra:
+        payload.update(extra)
+    return _sse_data(payload)
+
+
+def _generic_tool_output_chunk(
+    tool_name: str,
+    args: Any,
+    result: Any,
+    *,
+    default_output: str,
+    default_exit_code: int,
+    ui_tool: Optional[str] = None,
+) -> str:
+    """Build a generic tool_output chunk from a Cursor tool result."""
+    return _tool_output_chunk(
+        tool_name,
+        args,
+        output=_format_tool_result(result) or default_output,
+        exit_code=_exit_code_from_result(result, default=default_exit_code),
+        ui_tool=ui_tool,
+    )
+
+
 def publish_cursor_generated_image(
     *,
     image_bytes: Optional[bytes] = None,
@@ -588,23 +673,15 @@ def cursor_tool_call_chunks(
     owner: Optional[str] = None,
 ) -> List[str]:
     """Map one SDK tool_call event to Odysseus Chat SSE chunks (allowlist only)."""
-    name = str(_get_attr(event, "name", "") or "")
+    name, status, args = _tool_call_parts(event)
     if name not in CURSOR_CHAT_TOOL_ALLOWLIST:
         return []
 
     ui_tool = _CURSOR_TOOL_UI_NAME.get(name, name)
-    status = str(_get_attr(event, "status", "") or "").lower()
-    args = _get_attr(event, "args")
     chunks: List[str] = []
 
     if status == "running":
-        chunks.append(
-            _sse_data({
-                "type": "tool_start",
-                "tool": ui_tool,
-                "command": _tool_command_summary(name, args),
-            })
-        )
+        chunks.append(_tool_start_chunk(name, args, ui_tool=ui_tool))
         return chunks
 
     if status not in ("completed", "complete"):
@@ -634,15 +711,16 @@ def cursor_tool_call_chunks(
         )
 
     output = "Generated image." if image_meta.get("image_url") else "Image generation finished (no file returned)."
-    tool_output: Dict[str, Any] = {
-        "type": "tool_output",
-        "tool": ui_tool,
-        "command": prompt[:200],
-        "output": output,
-        "exit_code": 0 if image_meta.get("image_url") else 1,
-    }
-    tool_output.update(image_meta)
-    chunks.append(_sse_data(tool_output))
+    chunks.append(
+        _tool_output_chunk(
+            name,
+            args,
+            output=output,
+            exit_code=0 if image_meta.get("image_url") else 1,
+            ui_tool=ui_tool,
+            extra=image_meta,
+        )
+    )
     return chunks
 
 
