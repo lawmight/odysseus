@@ -127,6 +127,7 @@ async def stream_cursor_agent_loop(
     owner: str | None = None,
     cursor_agent_id: str | None = None,
     headers: Optional[Dict[str, str]] = None,
+    mcp_servers: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream Cursor agent run as Odysseus Agent-mode SSE (tools + text).
 
@@ -172,6 +173,8 @@ async def stream_cursor_agent_loop(
         local_opts = _ca.LocalAgentOptions(cwd=workspace)  # type: ignore[misc]
         resume_opts = {"apiKey": key, "local": {"cwd": workspace}}
         send_opts: Dict[str, Any] = {"model": model, "mode": "agent"}
+        if mcp_servers:
+            send_opts["mcp_servers"] = mcp_servers
 
         if resume:
             agent = await client.agents.resume(cursor_agent_id.strip(), resume_opts)

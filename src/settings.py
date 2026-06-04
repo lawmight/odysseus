@@ -95,6 +95,12 @@ DEFAULT_SETTINGS = {
     # Tune via Settings or by editing data/settings.json.
     "research_run_timeout_seconds": 1800,
     "agent_max_tool_calls": 0,
+    # Cursor Agent normally uses MCP from Cursor's own workspace/user config
+    # (for example .cursor/mcp.json). This opt-in bridge passes enabled
+    # Odysseus MCP DB rows to Cursor SDK SendOptions.mcp_servers. Keep false
+    # unless you intentionally want those server commands/URLs/env values
+    # available to the Cursor bridge/runtime.
+    "cursor_agent_mcp_from_db": False,
     "agent_input_token_budget": 6000,
     # Ceiling on the *auto-derived* input budget that #1230 introduced. Has
     # no effect when `agent_input_token_budget` is explicitly set (the user's

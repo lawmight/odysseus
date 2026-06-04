@@ -1020,8 +1020,17 @@ def setup_chat_routes(
                             extract_cursor_cwd,
                         )
                         from src.providers.cursor_agent import stream_cursor_agent_loop
+                        from src.providers.cursor_mcp import (
+                            cursor_agent_mcp_from_db_enabled,
+                            load_cursor_agent_mcp_servers,
+                        )
 
                         _cursor_cwd = extract_cursor_cwd(sess.headers)
+                        _cursor_mcp_servers = (
+                            load_cursor_agent_mcp_servers()
+                            if cursor_agent_mcp_from_db_enabled()
+                            else None
+                        )
                         _agent_chunk_iter = stream_cursor_agent_loop(
                             sess.endpoint_url,
                             sess.model,
@@ -1034,6 +1043,7 @@ def setup_chat_routes(
                             temperature=ctx.preset.temperature,
                             max_tool_calls=_tool_budget,
                             owner=_user,
+                            mcp_servers=_cursor_mcp_servers,
                         )
                     else:
                         _agent_chunk_iter = stream_agent_loop(
