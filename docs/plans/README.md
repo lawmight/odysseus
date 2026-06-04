@@ -10,6 +10,7 @@
 | **C+** | [cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md) | **Shipped:** Cursor `generateImage` in Chat (`image_url` via gallery). |
 | **C+ polish** | [cursor-plan-c-plus-polish.md](./cursor-plan-c-plus-polish.md) | **Shipped:** reload `tool_events`, gallery dedupe, stronger tests. |
 | **Matrix** | [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md) | SDK feature inventory vs Odysseus status (gaps, C+, B). |
+| **Upgrades** | [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md) | Pin policy, checklist, and regression hotspots when `cursor-sdk` changes. |
 | — | [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md) | API/SDK facts and handoff snippets (shared by A/B/C). |
 
 **Implementation status (2026-06-04):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). Plan B was given a [v2 second pass](./cursor-agent-tab-integration-plan.md): Phase 2 context injection is mostly already covered by the shared preface; remaining work (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud) is tracked in the [backlog](./cursor-agent-tab-backlog.md) and gated on the [Decision log](./cursor-agent-tab-integration-plan.md#12-decision-log).

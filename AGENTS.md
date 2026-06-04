@@ -287,6 +287,8 @@ PY
 
 See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 is shipped; the [Plan B v2](docs/plans/cursor-agent-tab-integration-plan.md) reframe and [backlog](docs/plans/cursor-agent-tab-backlog.md) track the remaining follow-ups (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud).
 
+**SDK upgrades:** [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) — bounded pin in `requirements-cursor.txt`; re-run the checklist before bumping. PyPI latest as of doc authoring: `0.1.6` (no newer release required an immediate code change).
+
 ---
 
 ## One-time VM packages
