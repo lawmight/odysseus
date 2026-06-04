@@ -1,6 +1,6 @@
 # Plan B v2: Cursor SDK engine for Odysseus Agent mode
 
-**Status:** **Phase 1 shipped** on `main` ([#17](https://github.com/lawmight/odysseus/pull/17), commit `0a70975`); Phases 2-4 reframed below after Plan A/C/C+ landed.
+**Status:** **Phase 1 plus B2a-B3 follow-ups shipped**; Cloud Cursor agents remain out of scope for Odysseus v1.
 **Target repo:** Odysseus
 **Reconciled against:** `main` @ `2a0e5de` (2026-06-04), [`cursor-sdk-capability-matrix.md`](./cursor-sdk-capability-matrix.md), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
 
@@ -17,12 +17,13 @@
 | Tool events -> Agent UI cards | shipped | `cursor_agent_tool_call_chunks` -> `tool_start` / `tool_output` |
 | Durable agent resume | shipped (shared with Chat) | `sessions.cursor_agent_id`, `cursor_adapter.build_cursor_user_message` |
 | Context (memory / RAG / web) into the agent prompt | mostly shipped via shared preface | see Section 5 |
-| Skills semantics on Cursor engine | gap (product) | Section 5.2 |
-| Background auto-continue on Cursor sessions | gap (small code) | Section 5.3 |
-| MCP into the Cursor agent | documented-only | Section 6 |
+| Skills semantics on Cursor engine | shipped | Section 5.2 |
+| Background auto-continue on Cursor sessions | shipped guard | Section 5.3 |
+| Tool mapper dedupe | shipped | Section 5.4 |
+| MCP into the Cursor agent | shipped opt-in; disabled by default | Section 6 |
 | Cloud Cursor agents in Odysseus | wont-fix v1 | Section 7 |
 
-**v2 covers:** finishing the documentation of Phase 1 as-built, reframing Phase 2 around what already exists, deciding the policy items in the Decision log (Section 12), and listing the implementation backlog ([`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md)). It does **not** mandate the MCP bridge or cloud runtime.
+**v2 covers:** finishing the documentation of Phase 1 as-built, reframing Phase 2 around what already exists, and documenting the shipped follow-ups ([`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md)). Cloud runtime remains outside this plan.
 
 ---
 
@@ -43,7 +44,7 @@ Plan A/C built a **shared adapter** ([`src/providers/cursor_adapter.py`](../../s
 | Entry | `stream_llm` -> `stream_cursor_chat` | `stream_cursor_agent_loop` |
 | Send mode | default | `SendOptions(mode="agent")` |
 | Tool policy | allowlist (`CURSOR_CHAT_TOOL_ALLOWLIST` = `{generateImage}`) | all tools -> generic `tool_start` / `tool_output` |
-| `generateImage` -> gallery | yes (`cursor_tool_call_chunks`) | see Decision D1 |
+| `generateImage` -> gallery | yes (`cursor_tool_call_chunks`) | yes (delegates to shared gallery path) |
 | Bridge / resume / cancel / images | shared `cursor_adapter` | shared `cursor_adapter` |
 | Heartbeat SSE | shared pattern | `_heartbeat_interval_sec` in `cursor_agent.py` |
 
@@ -60,7 +61,9 @@ Anything in the "shared" rows is **inherited** and must not be re-specified or r
 - creates a new Cursor agent or resumes `cursor_agent_id`, emitting `cursor_agent_id` SSE on first create so [`routes/chat_routes.py`](../../routes/chat_routes.py) can persist it via `session_manager.set_cursor_agent_id`;
 - sends with `{"model": model, "mode": "agent"}`;
 - streams `assistant` -> `delta`, `thinking` -> `delta` + `thinking: true`, `tool_call` -> `cursor_agent_tool_call_chunks`, `error` -> SSE error;
+- delegates Cursor Agent `generateImage` completions to the shared gallery path when the workspace is known, so the Agent thread receives `/api/generated-image/...` metadata like Chat;
 - enforces an optional `max_tool_calls` budget (from `agent_max_tool_calls` setting) and emits `budget_exceeded`;
+- optionally passes enabled Odysseus MCP DB rows to `SendOptions.mcp_servers` when `cursor_agent_mcp_from_db` is explicitly enabled;
 - emits a periodic `: heartbeat` comment so the tunnel stays alive during long tool runs;
 - registers the run for `cancel_cursor_run` (Stop button) and cleans up on disconnect;
 - emits `usage` with `total_time` on completion, then `[DONE]`.
@@ -84,7 +87,7 @@ These were never closed and are **QA, not research**:
 - [ ] Rapid double-send handled gracefully (no `agent_busy` crash).
 - [ ] Compare / Research / incognito do not invoke the Cursor engine.
 
-Automated coverage today: [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py) (mapper + heartbeat) and the routing regression in [`tests/test_cursor_plan_c_plus.py`](../../tests/test_cursor_plan_c_plus.py) (`test_chat_routes_uses_cursor_agent_loop_in_agent_mode`).
+Automated coverage today: [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py) (mapper + heartbeat + Agent `generateImage` gallery), [`tests/test_cursor_agent_skills.py`](../../tests/test_cursor_agent_skills.py), [`tests/test_bg_monitor_cursor.py`](../../tests/test_bg_monitor_cursor.py), [`tests/test_cursor_mcp_bridge.py`](../../tests/test_cursor_mcp_bridge.py), and the routing regression in [`tests/test_cursor_plan_c_plus.py`](../../tests/test_cursor_plan_c_plus.py) (`test_chat_routes_uses_cursor_agent_loop_in_agent_mode`).
 
 ---
 
@@ -112,27 +115,27 @@ Vision is shipped too: `build_cursor_user_message` already attaches `SDKImage` f
 
 ### 5.2 Skills (product decision -> D4)
 
-[`ChatProcessor.prepare_context`](../../src/chat_processor.py) injects a **skills index** in agent mode that instructs the model to call `manage_skills(action='view', ...)`. The Cursor agent **cannot call Odysseus tools**, so that index is misleading noise on Cursor sessions. Target behavior (pending D4): when the endpoint is Cursor and mode is agent, omit the tool-oriented skills index; optionally inject a small number of skill **bodies** as read-only untrusted context instead.
+[`ChatProcessor.prepare_context`](../../src/chat_processor.py) injects a **skills index** in native agent mode that instructs the model to call `manage_skills(action='view', ...)`. The Cursor agent **cannot call Odysseus tools**, so Cursor agent sessions omit that tool-oriented skills index. Native Agent sessions still receive it.
 
 ### 5.3 Background auto-continue (small code -> B2c)
 
-[`src/bg_monitor.py`](../../src/bg_monitor.py) `_drain_agent` always calls `stream_agent_loop`. For a Cursor-backed session this runs the **native** engine against a `cursor://local` endpoint, which is wrong. v2 fix: detect Cursor sessions in the monitor and skip the native auto-continue (post a short system note) rather than silently running the wrong engine. A full Cursor follow-up path is backlog (B-future).
+[`src/bg_monitor.py`](../../src/bg_monitor.py) detects Cursor-backed sessions before `_drain_agent` and skips native auto-continue with a log note. This avoids running `stream_agent_loop` against a `cursor://local` endpoint. A full Cursor follow-up path remains future work if product needs it.
 
 ### 5.4 Tool mapper hygiene (optional -> B2d)
 
-There are two mappers: `cursor_tool_call_chunks` (Chat, allowlist + `generateImage` gallery) and `cursor_agent_tool_call_chunks` (Agent, all tools, generic). They share `_format_tool_result` style logic. A unified helper is desirable but only worth it if the diff stays small; otherwise leave the two mappers and just share the `generateImage` publish path (D1).
+There are still two public mappers: `cursor_tool_call_chunks` (Chat, allowlist + `generateImage` gallery) and `cursor_agent_tool_call_chunks` (Agent, all tools, generic). They now share internal helpers in `cursor_adapter` for tool-call extraction, `tool_start` / `tool_output` construction, result formatting, and exit-code extraction. This keeps Chat and Agent policies separate while removing the duplicated low-level SSE logic.
 
 ---
 
-## 6. MCP (Phase 3 - documented, not implemented in v2)
+## 6. MCP (Phase 3 - documented default plus opt-in DB bridge)
 
 | Approach | v2 stance |
 |----------|-----------|
-| Workspace `.cursor/mcp.json` in the agent `cwd` | **Documented default.** The bridge already runs in `cwd`, so MCP servers configured there are picked up by the Cursor agent. |
-| Map Odysseus `McpServer` DB rows -> `SendOptions(mcp_servers=...)` | Optional follow-up PR (B3). Requires a security review: Odysseus MCP secrets would be handed to the Cursor bridge. |
+| Workspace `.cursor/mcp.json` in the agent `cwd` | **Default.** The bridge runs in `cwd`, so MCP servers configured there are picked up by the Cursor agent. |
+| Map Odysseus `McpServer` DB rows -> `SendOptions(mcp_servers=...)` | **Implemented opt-in.** Set `cursor_agent_mcp_from_db: true` in `data/settings.json`. Enabled stdio/SSE/HTTP rows are serialized by `src/providers/cursor_mcp.py`; rows with per-tool disabled lists are skipped. |
 | `agent.reload()` after MCP file edits | Backlog note (matrix `agent.reload`). |
 
-Plan B v1 does **not** wire the Odysseus MCP admin UI into the Cursor agent. See Decision D2.
+The DB bridge is disabled by default because MCP commands, URLs, and stdio environment values are passed to the Cursor bridge/runtime. See Decision D2.
 
 ---
 
@@ -152,7 +155,7 @@ Cursor must not leak into these paths; they call the LLM separately and have no 
 | Deep Research | mode guard | [`routes/chat_routes.py`](../../routes/chat_routes.py), [`routes/research_routes.py`](../../routes/research_routes.py) |
 | Utility / vision resolver | `exclude_cursor` | [`src/endpoint_resolver.py`](../../src/endpoint_resolver.py) |
 | Background task HTTP | no `cursor://` HTTP fallback | [`src/endpoint_resolver.py`](../../src/endpoint_resolver.py) |
-| Background auto-continue | **to fix** (B2c) | [`src/bg_monitor.py`](../../src/bg_monitor.py) |
+| Background auto-continue | skip guard | [`src/bg_monitor.py`](../../src/bg_monitor.py) |
 
 ---
 
@@ -186,7 +189,7 @@ Manual desk QA: Section 4.2 checklist (needs a real `CURSOR_API_KEY` and the SDK
 1. `feat(chat): Cursor BYOK provider with Chat parity (cursor-sdk)` - Plan A/C + C+.
 2. `feat(agent): optional Cursor SDK engine for Agent mode` - Plan B Phase 1, depends on (1).
 
-Follow-ups (B2a-B4 in the backlog) are **not** blockers for reviewing (1) and (2).
+Follow-ups B2a-B3 are small Agent-polish changes layered on top of (2). B4 remains a separate future product plan.
 
 **Reviewer guide to include in the PR body:**
 
@@ -220,10 +223,10 @@ These are the roadcrosses that need a human (maintainer) decision. Recommended d
 
 | ID | Question | Recommended default | Decision | Blocks |
 |----|----------|---------------------|----------|--------|
-| D1 | Should the Agent engine surface `generateImage` via the gallery like Chat (C+)? | Yes - reuse the shared publish path | _default_ | B2a |
-| D2 | Wire Odysseus MCP admin (`McpServer`) into the Cursor agent? | No for v1; document `.cursor/mcp.json`; DB mapping is an optional follow-up after security review | _default_ | B3 |
+| D1 | Should the Agent engine surface `generateImage` via the gallery like Chat (C+)? | Yes - reuse the shared publish path | **yes; shipped** | B2a |
+| D2 | Wire Odysseus MCP admin (`McpServer`) into the Cursor agent? | Default to `.cursor/mcp.json`; DB mapping requires explicit opt-in because it shares MCP config/secrets with Cursor | **opt-in shipped; default off** | B3 |
 | D3 | Support cloud Cursor agents inside Odysseus? | No for v1 (wont-fix); separate plan if ever wanted | _default_ | B4 |
-| D4 | What do skills mean on a Cursor agent session? | Omit the `manage_skills` index; optionally inject skill bodies as read-only text | _default_ | B2b |
+| D4 | What do skills mean on a Cursor agent session? | Omit the `manage_skills` index; optionally inject skill bodies as read-only text | **omit index; shipped** | B2b |
 | D5 | Add an `agent_engine` DB column, or infer the engine? | Infer from `provider=cursor` + `chat_mode=agent`; no migration | _default_ | - |
 | D6 | One upstream PR or two? | Two (Chat, then Agent) unless the fork diff is already squashed | _default_ | upstream review |
 
@@ -231,4 +234,4 @@ These are the roadcrosses that need a human (maintainer) decision. Recommended d
 
 ## 13. Backlog
 
-See [`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md) for the ordered implementation epics (B2a-B4) with files, acceptance tests, and matrix row IDs.
+See [`cursor-agent-tab-backlog.md`](./cursor-agent-tab-backlog.md) for shipped B2a-B3 details and deferred B4 scope.

@@ -11,7 +11,7 @@
 A self-hosted AI workspace -- meant to be the self-hosted version of the UI experience you get from ChatGPT and Claude. But with more jank and fun. Running on your own hardware, with your own data -- local-first, privacy-first, and no trojan.
 
 ## Features
-  - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI</sub>
+  - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI · GitHub Copilot</sub>
   - **Agent** -- hand it tools and let it run the whole task itself.<br>　<sub>built on [opencode](https://github.com/anomalyco/opencode) · MCP · web · files · shell · skills · memory</sub>
   - **Cookbook** -- Scans your hardware, recommends models, click to download and serve.. easy!<br>　<sub>built on [llmfit](https://github.com/AlexsJones/llmfit) · VRAM-aware · GGUF / FP8 / AWQ · fit scoring · vLLM / llama.cpp serving</sub>
   - **Deep Research** -- multi-step runs that gather, read, and synthesize sources into a nice visual report.<br>　<sub>adapted from [Tongyi DeepResearch](https://github.com/Alibaba-NLP/DeepResearch)</sub>
@@ -64,6 +64,8 @@ cd odysseus
 cp .env.example .env       # optional, but recommended for explicit defaults
 docker compose up -d --build
 ```
+To include optional extras in the image (PDF viewer, Office extraction; includes AGPL PyMuPDF), build with `docker compose build --build-arg INSTALL_OPTIONAL=true` before `up`.
+
 Open `http://localhost:7000` when the containers are healthy. Docker Compose
 binds the web UI to `127.0.0.1` by default. If the port is taken, set
 `APP_PORT=7001` in `.env` and recreate the container. Set `APP_BIND=0.0.0.0`
@@ -426,7 +428,7 @@ Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/i
 
 Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** requires `cursor-sdk` and the bridge on the host where uvicorn runs.
 
-Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). Multi-turn Chat and Agent reuse a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Compare**, **Deep Research**, and utility/vision background tasks still skip Cursor endpoints — see [`docs/plans/cursor-agent-tab-integration-plan.md`](docs/plans/cursor-agent-tab-integration-plan.md) for Phase 2–4 (MCP bridge, cloud runtime).
+Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). Multi-turn Chat and Agent reuse a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. Cursor Agent tool calls render as Agent tool cards, and Cursor `generateImage` results use the same `/api/generated-image/...` gallery path as Chat. Cursor Agent sessions omit the Odysseus `manage_skills` prompt index because Cursor cannot call Odysseus tools. **Compare**, **Deep Research**, utility/vision background tasks, and background-job auto-continue still skip Cursor endpoints. Cursor Agent MCP uses Cursor workspace/user config by default (for example `.cursor/mcp.json` in the workspace); admins can opt in to passing enabled Odysseus MCP DB rows to Cursor with `cursor_agent_mcp_from_db: true` in `data/settings.json` after reviewing the secret-sharing implications. Cloud Cursor agents remain a separate future plan.
 
 #### SDK version sensitivity
 

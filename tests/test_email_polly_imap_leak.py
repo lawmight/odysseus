@@ -101,7 +101,7 @@ async def test_auto_summarize_pass_logs_out_imap_on_select_failure(monkeypatch):
         "test setup: _imap_connect must be reached for the leak to apply"
     )
     assert captured.get("logout_calls", 0) >= 1, (
-        f"conn.logout() must be called on the error path "
+        f"conn.logout() must be called at least once on the error path "
         f"(IMAP leak fix). Got logout_calls={captured.get('logout_calls')}, "
         f"select_calls={captured.get('select_calls')}. Pre-fix the "
         f"outer `except` returned without logging out the IMAP socket."

@@ -1,6 +1,6 @@
 # Cursor integration — manual smoke (Chat + Agent)
 
-Use this while Odysseus is running with a **Cursor (local)** endpoint and your API key configured. Goal: confidence before Plan B backlog work (B2a–B4) or a full integration tour.
+Use this while Odysseus is running with a **Cursor (local)** endpoint and your API key configured. Goal: confidence for a full Cursor Chat + Agent integration tour (Plan B B2a-B3 follow-ups are shipped; Cloud Cursor agents remain separate).
 
 **Environment:** Chat at `http://127.0.0.1:7000` (port-forwarded). Keep the tab **focused** during long tool runs (image gen) so SSE `tool_output` is not missed.
 

@@ -28,10 +28,10 @@ const EXPLAIN = {
     section: '## Checklist',
     fix: 'Check the line: `- [x] I searched` (duplicate-search checkbox).',
   },
-  '**How to Test** — add at least one numbered step a reviewer can follow to verify this works.': {
+  '**How to Test** — explain how a reviewer can verify this change. Numbered steps, the commands you ran, or a short code block all work — give a sentence or two of real detail (not just "tested locally").': {
     n: 5,
     section: '## How to Test',
-    fix: 'Add numbered steps like `1. Run pytest …` (not "TBD" or bullets only).',
+    fix: 'Add at least ~30 characters of real verification detail (numbered steps, commands run, or a short code block).',
   },
 };
 
