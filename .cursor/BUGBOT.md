@@ -2,6 +2,8 @@
 
 Project-specific review context for [Cursor Bugbot](https://cursor.com/docs/bugbot). CI runs pytest and secret scans; this file covers invariants those gates cannot express.
 
+Before opening a PR, follow [docs/guides/UPSTREAM_PR_GUIDELINES.md](../docs/guides/UPSTREAM_PR_GUIDELINES.md) and run `bash scripts/ci-preflight.sh`.
+
 ## Security and auth
 
 - New API routes must respect the existing privilege model: admin-only tools (shell, Python, file read/write, MCP management, API tokens, webhooks, model/cookbook serving, backup/vault, app settings) stay admin-gated unless the PR explicitly documents a deliberate change with migration notes.

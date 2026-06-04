@@ -1,58 +1,57 @@
 // @ts-check
 'use strict';
 
+/** @param {string} body */
+function stripComments(body) {
+  return (body ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
+}
+
+/** @param {string} body @param {string} heading */
+function sectionText(body, heading) {
+  const m = body.match(new RegExp(`#+\\s+${heading}[\\s\\S]*?(?=\\n#+\\s+|$)`, 'i'));
+  return stripComments(m?.[0].replace(new RegExp(`#+\\s+${heading}`, 'i'), '') ?? '');
+}
+
+/** @param {string} body @returns {string[]} */
+function validatePrDescription(body) {
+  const problems = [];
+
+  if (sectionText(body, 'Summary').length < 20) {
+    problems.push('**Summary** is empty or too short — describe what changed and why.');
+  }
+
+  const linkedSection = sectionText(body, 'Linked Issue');
+  const hasIssueRef = /#\d+/.test(linkedSection) || /\/issues\/\d+/.test(linkedSection);
+  if (!linkedSection || !hasIssueRef) {
+    problems.push('**Linked Issue** — add a reference like `Fixes #NNN`, a bare `#NNN`, or a link to the issue.');
+  }
+
+  const typeBlock = body.match(/##\s+Type of Change[\s\S]*?(?=\n##\s|$)/i)?.[0] ?? '';
+  if (!/- \[x\]/i.test(typeBlock)) {
+    problems.push('**Type of Change** — check at least one box.');
+  }
+
+  if (!/- \[x\] I searched/i.test(body)) {
+    problems.push('**Checklist** — check the duplicate-search box to confirm you searched existing issues and PRs.');
+  }
+
+  const howTo = sectionText(body, 'How to Test');
+  if (!howTo || !/\d+\.\s*\S/.test(howTo)) {
+    problems.push('**How to Test** — add at least one numbered step a reviewer can follow to verify this works.');
+  }
+
+  return problems;
+}
+
 /** @param {{ github: import('@octokit/rest').Octokit, context: import('@actions/github').context, core: import('@actions/core') }} */
-module.exports = async ({ github, context, core }) => {
+async function runPrDescriptionCheck({ github, context, core }) {
   const body   = context.payload.pull_request.body || '';
   const prNum  = context.payload.pull_request.number;
   const MARKER = '<!-- pr-description-check-bot -->';
   const owner  = context.repo.owner;
   const repo   = context.repo.repo;
 
-  // Strip HTML comments so placeholder text does not count as content.
-  function strip(text) {
-    return (text ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
-  }
-
-  // Extract the text content of a Section. Matches any heading depth (#, ##,
-  // ###, …) so the check doesn't break if the template's heading level changes.
-  function section(heading) {
-    const m = body.match(new RegExp(`#+\\s+${heading}[\\s\\S]*?(?=\\n#+\\s+|$)`, 'i'));
-    return strip(m?.[0].replace(new RegExp(`#+\\s+${heading}`, 'i'), '') ?? '');
-  }
-
-  const problems = [];
-
-  // 1. Summary must be filled in.
-  if (section('Summary').length < 20) {
-    problems.push('**Summary** is empty or too short — describe what changed and why.');
-  }
-
-  // 2. Linked Issue must reference a real issue. Accept a bare #NNN, a closing
-  //    keyword + #NNN, or a full issue URL (e.g. .../issues/123) — the strict
-  //    keyword-prefixed form previously false-flagged correctly-linked PRs.
-  const linkedSection = section('Linked Issue');
-  const hasIssueRef = /#\d+/.test(linkedSection) || /\/issues\/\d+/.test(linkedSection);
-  if (!linkedSection || !hasIssueRef) {
-    problems.push('**Linked Issue** — add a reference like `Fixes #NNN`, a bare `#NNN`, or a link to the issue.');
-  }
-
-  // 3. At least one Type of Change box must be checked.
-  const typeBlock = body.match(/##\s+Type of Change[\s\S]*?(?=\n##\s|$)/i)?.[0] ?? '';
-  if (!/- \[x\]/i.test(typeBlock)) {
-    problems.push('**Type of Change** — check at least one box.');
-  }
-
-  // 4. Duplicate-search checklist item must be checked.
-  if (!/- \[x\] I searched/i.test(body)) {
-    problems.push('**Checklist** — check the duplicate-search box to confirm you searched existing issues and PRs.');
-  }
-
-  // 5. How to Test must have at least one numbered step.
-  const howTo = section('How to Test');
-  if (!howTo || !/\d+\.\s*\S/.test(howTo)) {
-    problems.push('**How to Test** — add at least one numbered step a reviewer can follow to verify this works.');
-  }
+  const problems = validatePrDescription(body);
 
   // ── Comment ──────────────────────────────────────────────────────────────
   const comments = await github.paginate(github.rest.issues.listComments, {
@@ -118,4 +117,7 @@ module.exports = async ({ github, context, core }) => {
     await swapLabel(prNum, 'needs work', 'ready for review');
     core.setFailed(`PR description has ${problems.length} issue(s) — see bot comment for details.`);
   }
-};
+}
+
+module.exports = runPrDescriptionCheck;
+module.exports.validatePrDescription = validatePrDescription;

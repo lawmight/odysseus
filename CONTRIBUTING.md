@@ -33,7 +33,15 @@ Windows is not actively tested. Docker on Linux or a Linux/macOS manual install 
 
 ## Running Checks
 
-Run the smallest relevant checks for your change:
+Run the smallest relevant checks for your change, or use the combined preflight script:
+
+```bash
+bash scripts/ci-preflight.sh --fork          # full fork gate before a PR
+bash scripts/ci-preflight.sh --upstream      # upstream-oriented (see docs/guides/UPSTREAM_PR_GUIDELINES.md)
+node scripts/validate-pr-body.js my-pr-body.md   # same rules as the PR description bot
+```
+
+Individual commands:
 
 ```bash
 python -m pytest
@@ -93,6 +101,11 @@ After workflows are enabled on GitHub, configure **Settings → Branches → `ma
 Do not enable multiple general AI PR reviewers (CodeRabbit, Cubic, Graphite AI, etc.) on the same repo while Bugbot is active — they duplicate comments without adding coverage CI and Bugbot already provide.
 
 Manual smoke (not on every PR): trigger the `docker-smoke` job via **Actions → Docker → Run workflow**.
+
+## Pull request guides
+
+- [Upstream PR guidelines](docs/guides/UPSTREAM_PR_GUIDELINES.md) — issue-first workflow, template rules, Cloud Agent video demos, fork vs upstream.
+- [CI parity report](docs/guides/CI_PARITY.md) — auto-generated comparison with `pewdiepie-archdaemon/odysseus` (run `bash scripts/ci-parity-report.sh` to refresh).
 
 ## Pull Requests
 
