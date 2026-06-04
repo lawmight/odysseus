@@ -66,11 +66,11 @@ Reference: Cursor SDK already emits `tool_call` with `name: "generateImage"` on 
 
 ## 4. Policy: which tools in Chat vs Plan B
 
-| Tool / behavior | Chat (C+) | Agent (Plan B) |
+| Tool / behavior | Chat (C+) | Agent (Plan B, shipped Phase 1) |
 |-----------------|-----------|----------------|
-| `generateImage` | **Yes** (v1) | Later |
-| Shell / file edit / MCP cards | No | Plan B |
-| Arbitrary `tool_call` passthrough | No — allowlist | Plan B |
+| `generateImage` | **Yes** (v1) | Generic tool card today; gallery parity tracked as backlog B2a (decision D1) |
+| Shell / file edit / MCP cards | No | **Yes** — full Cursor tools via `stream_cursor_agent_loop` |
+| Arbitrary `tool_call` passthrough | No — allowlist | **Yes** — all tools mapped to `tool_start` / `tool_output` |
 
 Start with an **allowlist** (`generateImage` only). Expand only with explicit product decision.
 

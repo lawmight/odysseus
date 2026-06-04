@@ -268,7 +268,7 @@ Odysseus `messages` are OpenAI-shaped (`role`, `content`). For Cursor **chat-onl
 6. **API beta:** Cloud Agents API v1 is **public beta**—pin SDK version, expect breaking changes.
 7. **Metrics:** Cursor may not return OpenAI-style `usage`; chat route already estimates tokens when missing—document as “estimated”.
 8. **Security:** `cwd` must be constrained to allowed paths (no arbitrary admin path → path traversal on host).
-9. **Do not route Agent tab through this adapter in v1**—Agent tab uses `stream_agent_loop()` with Odysseus tools (see Plan B).
+9. **Chat adapter stays Chat-only**—the Agent tab is routed through the separate `stream_cursor_agent_loop` engine, not this chat adapter (Plan B Phase 1 shipped; see [Plan B v2](./cursor-agent-tab-integration-plan.md)).
 
 ---
 

@@ -4,7 +4,7 @@
 **Date:** 2026-06-02 (updated 2026-06-03)  
 **Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (Phase 2–4 next), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
 
-**Next work:** Plan B Phases 2–4 in [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md). PR #2 / #8 branch map below is archival only.
+**Next work:** see the [Plan B v2 reframe](./cursor-agent-tab-integration-plan.md) and [backlog](./cursor-agent-tab-backlog.md). PR #2 / #8 branch map below is archival only.
 
 ---
 

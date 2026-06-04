@@ -134,14 +134,18 @@ Session (chat_mode=chat) → stream_llm_with_fallback → stream_llm
 
 ## 6. Product rules (avoid “less good than others” traps)
 
-1. **One sentence in UI:** “Cursor endpoints are for **Chat** only.”
-2. **Model picker / session create:** do not list Cursor endpoints when mode is Agent, Compare, Research, or when resolving `utility` / `vision` / `task` unless product explicitly expands scope later.
-3. **`supports_tools=false`** stays; never pass Odysseus tool schemas into `stream_cursor_chat`.
-4. **Do not** implement Plan B inside the same PR as Plan C completion; see §7.
+> **Update (Plan B Phase 1 shipped):** Agent mode now runs Cursor via `stream_cursor_agent_loop`, so rules 1–2 below describe the Plan C era. Cursor endpoints are no longer Chat-only; Compare / Research / utility / vision remain excluded. See [Plan B v2](./cursor-agent-tab-integration-plan.md).
+
+1. ~~**One sentence in UI:** “Cursor endpoints are for **Chat** only.”~~ Superseded — Cursor works in Chat and Agent.
+2. **Model picker / session create:** do not list Cursor endpoints when mode is Compare or Research, or when resolving `utility` / `vision` / `task` unless product explicitly expands scope later. (Agent is now supported.)
+3. **`supports_tools=false`** stays for the Chat adapter; never pass Odysseus tool schemas into `stream_cursor_chat`.
+4. **Do not** implement Plan B inside the same PR as Plan C completion; see §7. (Plan B later shipped as a separate change, PR #17.)
 
 ---
 
 ## 7. How to deal with Plan B (Agent tab)
+
+> **Status:** Plan B Phase 1 has since **shipped** ([#17](https://github.com/lawmight/odysseus/pull/17)). The section below is the original Plan-C-era reasoning, kept for history. For the current roadmap and decisions see [Plan B v2](./cursor-agent-tab-integration-plan.md) and the [backlog](./cursor-agent-tab-backlog.md).
 
 Plan B remains **valid future work** but is **not part of the real goal**. This section is for maintainers and future agents.
 
@@ -224,7 +228,7 @@ Re-query Nia / docs before implementation if the SDK minor version bumps.
 - Optional `requirements-cursor.txt`; Chat-only Cursor endpoints.
 - BYOK Cursor API key in Model Endpoints; local bridge + workspace path.
 - Session-scoped agent resume, `SDKImage` attachments, stop/cancel, display names.
-- Agent tab and background tasks: Cursor endpoints excluded until Plan B.
+- Agent tab: now supported via the Cursor engine (Plan B Phase 1, PR #17). Background auto-continue and Compare/Research remain excluded.
 
 **Files (expected):** `src/providers/cursor_adapter.py`, `src/llm_core.py`, `routes/model_routes.py`, `routes/session_routes.py` (+ migration), `static` admin, `README.md`, `ACKNOWLEDGMENTS.md`, tests.
 

@@ -163,8 +163,10 @@ Re-query Nia before implementation if `api.md` indexing completed (for rate limi
 | Plan B Phase 1 (`stream_cursor_agent_loop`) | Shipped ([#17](https://github.com/lawmight/odysseus/pull/17)) |
 | Agent + Cursor endpoint | Agent mode uses Cursor SDK engine; tool events map to `tool_start` / `tool_output` |
 | Compare / Research + Cursor | Still excluded (utility resolver / mode guards) |
+| Background auto-continue + Cursor | Still runs the native loop — to fix (backlog B2c) |
 
 Pre–Plan B gate (`0696a03`, Agent blocked): archival — see [docs/plans/README.md](./README.md#post-plan-b-phase-1-current).
+The Plan B roadmap had a v2 second pass — see [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md). The BUGBOT "Chat mode only" rule is corrected to describe two separate Cursor paths (Chat allowlist vs Agent engine).
 
 ---
 
@@ -172,7 +174,8 @@ Pre–Plan B gate (`0696a03`, Agent blocked): archival — see [docs/plans/READM
 
 ```
 Continue Cursor integration on main per docs/plans/README.md.
-Plan A/C/C+ and Plan B Phase 1 are shipped; next work is Plan B Phase 2–4
-(context injection, MCP bridge, cloud) in docs/plans/cursor-agent-tab-integration-plan.md.
+Plan A/C/C+ and Plan B Phase 1 are shipped. Plan B has a v2 reframe in
+docs/plans/cursor-agent-tab-integration-plan.md; pick up follow-ups from
+docs/plans/cursor-agent-tab-backlog.md (B2a–B4) per the Decision log.
 Use cursor-sdk>=0.1.6 (requirements-cursor.txt). Follow this verification sheet for API contracts.
 ```

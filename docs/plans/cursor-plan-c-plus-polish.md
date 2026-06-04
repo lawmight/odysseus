@@ -174,7 +174,7 @@ Replace or supplement `inspect.getsource` tests in `test_cursor_plan_c_plus.py`:
 | Cursor Chat image | Live bubble + `GENERATE_IMAGE` success |
 | Reload session | Image bubble from `tool_events` |
 | Gallery | Row under `data/generated_images/` + `/api/generated-image/…` |
-| Agent + Cursor | Still blocked |
+| Agent + Cursor | Uses the Cursor engine (`stream_cursor_agent_loop`, Plan B Phase 1) — not blocked |
 | Builtin image shortcut | Unchanged |
 | pytest | `test_cursor_plan_c_plus.py`, `test_cursor_adapter.py`, new route test |
 

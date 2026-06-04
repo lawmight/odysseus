@@ -63,11 +63,33 @@ def _exit_code_from_result(result: Any, *, default: int = 0) -> int:
     return default
 
 
-def cursor_agent_tool_call_chunks(event: Any) -> List[str]:
-    """Map SDK tool_call events to Agent tab tool_start / tool_output SSE."""
+def cursor_agent_tool_call_chunks(
+    event: Any,
+    *,
+    workspace: str | None = None,
+    model: str = "",
+    session_id: Optional[str] = None,
+    owner: Optional[str] = None,
+) -> List[str]:
+    """Map SDK tool_call events to Agent tab tool_start / tool_output SSE.
+
+    When the workspace is known, ``generateImage`` is delegated to the shared
+    Chat mapper so the Agent thread gets a gallery image_url (Plan B backlog
+    B2a / decision D1), matching Chat behavior. All other tools map to generic
+    tool_start / tool_output cards.
+    """
     name = str(_ca._get_attr(event, "name", "") or "")
     if not name:
         return []
+
+    if name == "generateImage" and workspace:
+        return _ca.cursor_tool_call_chunks(
+            event,
+            workspace=workspace,
+            model=model,
+            session_id=session_id,
+            owner=owner,
+        )
 
     status = str(_ca._get_attr(event, "status", "") or "").lower()
     args = _ca._get_attr(event, "args")
@@ -143,10 +165,11 @@ async def stream_cursor_agent_loop(
 ) -> AsyncGenerator[str, None]:
     """Stream Cursor agent run as Odysseus Agent-mode SSE (tools + text).
 
-    temperature and owner are accepted for call-site parity with stream_agent_loop
-    but are not passed to the Cursor SDK in v1.
+    temperature is accepted for call-site parity with stream_agent_loop but is
+    not passed to the Cursor SDK in v1. owner is used only to attribute
+    generateImage gallery saves.
     """
-    del temperature, owner
+    del temperature
     if not is_cursor_url(endpoint_url):
         yield (
             "event: error\ndata: "
@@ -250,7 +273,13 @@ async def stream_cursor_agent_loop(
                                 "used": tool_calls_used,
                             })
                             break
-                        for chunk in cursor_agent_tool_call_chunks(event):
+                        for chunk in cursor_agent_tool_call_chunks(
+                            event,
+                            workspace=workspace,
+                            model=model,
+                            session_id=session_id,
+                            owner=owner,
+                        ):
                             yield chunk
                         if status == "running":
                             tool_calls_used += 1

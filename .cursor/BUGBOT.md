@@ -10,9 +10,11 @@ Project-specific review context for [Cursor Bugbot](https://cursor.com/docs/bugb
 
 ## Cursor adapter boundaries
 
-- The Cursor provider path is **Chat mode only**. Changes must not silently enable Agent-tab capabilities (tool loops, MCP cards, unrestricted workspace tools) through the chat adapter.
+- The Cursor integration has **two separate paths**: the **Chat mapper** (`stream_cursor_chat`, allowlisted tools only via `CURSOR_CHAT_TOOL_ALLOWLIST`) and the **Agent engine** (`stream_cursor_agent_loop`, Plan B Phase 1, full Cursor tools). Keep them separate — do not route Agent tool loops through the Chat adapter, and do not widen the Chat allowlist to Agent-style tools without product sign-off.
+- The Chat allowlist (`CURSOR_CHAT_TOOL_ALLOWLIST`) must not grow to shell/file/MCP tools through the chat path; those belong to the Agent engine.
 - `src/providers/cursor_adapter.py` and related routes should not widen `CURSOR_ALLOWED_WORKSPACE_ROOTS` behavior without an explicit security note.
 - Image and attachment handling must stay on supported SDK paths; avoid HTTP fallbacks that bypass Cursor SDK contracts.
+- Cursor endpoints must stay excluded from Compare, Deep Research, utility/vision resolvers, and background auto-continue (`src/bg_monitor.py`); see `docs/plans/cursor-agent-tab-integration-plan.md` Section 8.
 
 ## Layering and maintainability
 

@@ -285,7 +285,7 @@ PY
 - Model listing uses the Cursor HTTP API; **Chat streaming** requires the SDK bridge on the Odysseus host
 - **Chat** and **Agent** modes support Cursor when the session uses a Cursor endpoint (Plan B Phase 1 on `main`)
 
-See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 is shipped; Phase 2–4 (MCP bridge, cloud) remain in [Plan B](docs/plans/cursor-agent-tab-integration-plan.md).
+See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 is shipped; the [Plan B v2](docs/plans/cursor-agent-tab-integration-plan.md) reframe and [backlog](docs/plans/cursor-agent-tab-backlog.md) track the remaining follow-ups (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud).
 
 ---
 
