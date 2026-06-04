@@ -82,6 +82,8 @@ def restore_real_core_modules() -> None:
     needs_db_reload = _core_database_is_stub() or _core_database_is_polluted()
     if needs_db_reload:
         sys.modules.pop("core.database", None)
+        sys.modules.pop("core.session_manager", None)
+        sys.modules.pop("core.models", None)
     auth = sys.modules.get("core.auth")
     if auth is not None and not getattr(auth, "__file__", None):
         sys.modules.pop("core.auth", None)
@@ -91,6 +93,103 @@ def restore_real_core_modules() -> None:
         importlib.import_module("core.database")
         if "core.auth" not in sys.modules:
             importlib.import_module("core.auth")
+        try:
+            importlib.import_module("core.models")
+            importlib.import_module("core.session_manager")
+        except Exception:
+            pass
+
+
+_ROUTE_MODULES_TO_RELOAD = (
+    "routes.model_routes",
+    "routes.chat_routes",
+    "routes.document_routes",
+    "src.endpoint_resolver",
+)
+
+_SRC_MODULES_TO_RELOAD = (
+    "src.agent_tools",
+    "src.agent_loop",
+    "src.llm_core",
+    "src.tool_parsing",
+    "src.tool_schemas",
+    "src.tool_execution",
+)
+
+
+def _module_is_import_stub(mod) -> bool:
+    if mod is None:
+        return False
+    return not getattr(mod, "__file__", None)
+
+
+def restore_stubbed_route_modules() -> None:
+    """Reload route modules commonly replaced by import-time sys.modules stubs."""
+    for mod_name in _ROUTE_MODULES_TO_RELOAD:
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        if not _module_is_import_stub(mod):
+            continue
+        sys.modules.pop(mod_name, None)
+        try:
+            importlib.import_module(mod_name)
+        except Exception:
+            pass
+
+
+def restore_stubbed_src_modules() -> None:
+    """Reload src.* modules replaced by MagicMock during test module collection."""
+    for mod_name in _SRC_MODULES_TO_RELOAD:
+        mod = sys.modules.get(mod_name)
+        if not _module_is_import_stub(mod):
+            continue
+        sys.modules.pop(mod_name, None)
+        try:
+            importlib.import_module(mod_name)
+        except Exception:
+            pass
+
+
+def _webhook_manager_is_polluted() -> bool:
+    """True when webhook_manager kept stale DB bindings from a stubbed import."""
+    wm = sys.modules.get("src.webhook_manager")
+    if wm is None or not getattr(wm, "__file__", None):
+        return False
+    if not _has_module("sqlalchemy"):
+        return False
+    try:
+        from core.database import Webhook as real_webhook
+    except Exception:
+        return False
+    return getattr(wm, "Webhook", None) is not real_webhook
+
+
+def restore_webhook_manager_if_polluted() -> None:
+    """Reload webhook_manager after tests import it with fake core/src.database."""
+    if not _webhook_manager_is_polluted():
+        return
+    sys.modules.pop("src.webhook_manager", None)
+    try:
+        importlib.import_module("src.webhook_manager")
+    except Exception:
+        pass
+
+
+def make_db_session(**overrides):
+    """Minimal Session row satisfying NOT NULL endpoint_url (matches production)."""
+    from core.database import Session as DbSession
+
+    defaults = {
+        "id": "test-session",
+        "name": "test",
+        "endpoint_url": "",
+        "model": "m",
+        "owner": "alice",
+        "archived": False,
+    }
+    defaults.update(overrides)
+    return DbSession(**defaults)
 
 
 @pytest.fixture(autouse=True)
@@ -100,9 +199,15 @@ def _ensure_real_core_database(request):
     if modname.endswith("test_companion_pairing"):
         yield
         return
+    restore_stubbed_src_modules()
+    restore_stubbed_route_modules()
     if _core_database_is_stub() or _core_database_is_polluted():
         restore_real_core_modules()
+    restore_webhook_manager_if_polluted()
     yield
-
-
+    restore_stubbed_src_modules()
+    if _core_database_is_stub() or _core_database_is_polluted():
+        restore_real_core_modules()
+        restore_stubbed_route_modules()
+    restore_webhook_manager_if_polluted()
 

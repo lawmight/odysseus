@@ -153,16 +153,16 @@ def test_document_owner_filter_applies_owner_clause():
 # gallery._owner_filter
 # ---------------------------------------------------------------------------
 
-def test_gallery_owner_filter_blocks_anonymous():
+def test_gallery_owner_filter_allows_anonymous_in_single_user_mode():
     from routes.gallery_routes import _owner_filter
     fake_q = MagicMock()
     out = _owner_filter(fake_q, user=None)
-    # Anonymous → q.filter(False) → contradiction, empty result set.
-    fake_q.filter.assert_called_once_with(False)
-    assert out is fake_q.filter.return_value
+    # Auth disabled / single-user: no owner scoping (upstream #1771).
+    fake_q.filter.assert_not_called()
+    assert out is fake_q
 
 
-def test_gallery_owner_filter_passes_user():
+def test_gallery_owner_filter_scopes_authenticated_user():
     from routes.gallery_routes import _owner_filter
     fake_q = MagicMock()
     out = _owner_filter(fake_q, user="alice")

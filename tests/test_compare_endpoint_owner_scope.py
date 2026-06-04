@@ -10,25 +10,26 @@ Mirrors the session `_owned_endpoint` and research `_owned_enabled_endpoint`
 fixes.
 """
 
+import importlib.util
 import sys
 import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-# Stub core.database so importing routes.compare_routes (which drags in
-# core.session_manager) is cheap under the sqlalchemy MagicMock stubs. The
-# helper resolves ModelEndpoint at call time; we swap in a fake declarative
-# class below. owner_filter stays REAL.
-if "core.database" not in sys.modules:
-    sys.modules["core.database"] = types.ModuleType("core.database")
-_cd = sys.modules["core.database"]
-_cd.Base = MagicMock()
-for _name in (
-    "Session", "ChatMessage", "Document", "DocumentVersion", "GalleryImage",
-    "GalleryAlbum", "SessionLocal", "Comparison", "ModelEndpoint",
-):
-    if not hasattr(_cd, _name):
-        setattr(_cd, _name, MagicMock())
+# Stub core.database only when SQLAlchemy is unavailable. When it is installed,
+# keep the real ORM module — overwriting Base with MagicMock breaks later tests
+# that share the same in-process engine/metadata (calendar, document, etc.).
+if importlib.util.find_spec("sqlalchemy") is None:
+    if "core.database" not in sys.modules:
+        sys.modules["core.database"] = types.ModuleType("core.database")
+    _cd = sys.modules["core.database"]
+    _cd.Base = MagicMock()
+    for _name in (
+        "Session", "ChatMessage", "Document", "DocumentVersion", "GalleryImage",
+        "GalleryAlbum", "SessionLocal", "Comparison", "ModelEndpoint",
+    ):
+        if not hasattr(_cd, _name):
+            setattr(_cd, _name, MagicMock())
 
 from routes.compare_routes import _owned_endpoint_by_url  # noqa: E402
 
