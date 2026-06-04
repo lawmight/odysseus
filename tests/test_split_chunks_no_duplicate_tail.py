@@ -13,8 +13,11 @@ def test_no_duplicate_tail_chunk():
     assert [len(c) for c in chunks] == [1000, 300]
 
 
-def test_no_identical_chunks():
-    text = "".join(chr(33 + (k % 90)) for k in range(2000))
+def test_no_chunk_is_contained_in_another():
+    text = "\n".join(
+        f"unique-line-{k:04d}-square-{k * k:08d}-cube-{k * k * k:012d}"
+        for k in range(300)
+    )
     chunks = split_chunks(text, size=1000, overlap=200)
     # Overlap makes later chunks overlap in *content* with earlier ones; the
     # regression was an extra identical trailing chunk. No two chunks should be

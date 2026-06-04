@@ -234,9 +234,11 @@ def build_headers(api_key: Optional[str], base: str, provider_config: Optional[s
             headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
         return headers
-    if not api_key:
-        return {}
-    headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "copilot":
+        from src.copilot import copilot_headers
+        return copilot_headers(api_key)
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     if provider == "openrouter":
         headers.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
         headers.setdefault("X-OpenRouter-Title", "Odysseus")
