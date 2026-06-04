@@ -295,9 +295,10 @@ PY
 - Install: `requirements-cursor.txt` (optional; auto on Cloud Agent VMs when env is detected)
 - Admin: **Settings → Add Models → API → Cursor (local)** (hidden until SDK is installed), workspace under `CURSOR_ALLOWED_WORKSPACE_ROOTS` (default: repo root)
 - Model listing uses the Cursor HTTP API; **Chat streaming** requires the SDK bridge on the Odysseus host
-- **Chat** and **Agent** modes support Cursor when the session uses a Cursor endpoint (Plan B Phase 1 on `main`)
+- **Chat** and **Agent** modes support Cursor when the session uses a Cursor endpoint. Agent mode renders Cursor tool calls as Agent tool cards, including `generateImage` gallery URLs via `/api/generated-image/...`.
+- Cursor Agent MCP defaults to Cursor's workspace/user config (for example `.cursor/mcp.json`). Passing enabled Odysseus MCP DB rows to Cursor is disabled by default; set `cursor_agent_mcp_from_db: true` only after reviewing that MCP commands/URLs/env values are shared with the Cursor bridge/runtime.
 
-See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 is shipped; the [Plan B v2](docs/plans/cursor-agent-tab-integration-plan.md) reframe and [backlog](docs/plans/cursor-agent-tab-backlog.md) track the remaining follow-ups (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud).
+See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 plus Plan B B2a-B3 follow-ups are shipped; Cloud Cursor agents remain a separate future plan.
 
 **SDK upgrades:** [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) — bounded pin in `requirements-cursor.txt`; re-run the checklist before bumping. PyPI latest as of doc authoring: `0.1.6` (no newer release required an immediate code change).
 

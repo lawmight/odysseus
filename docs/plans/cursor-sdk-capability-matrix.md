@@ -42,26 +42,25 @@
 
 | Status | Count |
 |--------|------:|
-| shipped | 28 |
-| partial | 6 |
-| gap | 22 |
+| shipped | 31 |
+| partial | 8 |
+| gap | 17 |
 | blocked | 4 |
 | n/a | 20 |
 | **Total rows** | **80** |
 
 ### Top gaps by user impact (fix or plan next)
 
-1. **`SendOptions.mode` (plan/agent)** — Phase 1 ships `agent` mode; plan mode polish (**B** Phase 2+)
-2. **Full tool mapping → `tool_start` / `tool_output`** — Phase 1 baseline shipped; expand coverage (**B** Phase 2+)
-3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** Phase 3)
-4. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
-5. **`local.force`** — recover stuck local runs (**Phase 2**)
-6. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
-7. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
+1. **Plan mode polish** — Agent mode ships `SendOptions(mode="agent")`; explicit `plan` UX remains future work
+2. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
+3. **`local.force`** — recover stuck local runs (**Phase 2**)
+4. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
+5. **Remote image URL inputs** — local files/data URLs ship; URL images remain rare edge-case work
+6. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
 
 **Shipped (C+):** Chat `generateImage` → `tool_start` / `tool_output` / `image_url` ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)).
 
-**Shipped (B Phase 1):** Agent tab `stream_cursor_agent_loop` — Cursor SDK engine with tool cards ([#17](https://github.com/lawmight/odysseus/pull/17)).
+**Shipped (B Phase 1 + follow-ups):** Agent tab `stream_cursor_agent_loop` — Cursor SDK engine with tool cards ([#17](https://github.com/lawmight/odysseus/pull/17)), Agent `generateImage` gallery parity, Cursor skills-index suppression, background auto-continue guard, shared mapper helpers, and disabled-by-default Odysseus MCP DB bridge.
 
 ### Plan C+ checklist (filter `Target plan = C+`)
 
@@ -162,8 +161,8 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `send.model_override` | Per-send `model` in options | Async | shipped | `agent.send(payload, {"model": model})` | Override on each send; sticky in SDK | A/C | Critical for resume |
 | `send.mode_plan` | `mode: "plan"` | Async | gap | — | Default SDK agent mode in Chat | **B** | Plan-first workflows |
-| `send.mode_agent` | `mode: "agent"` | Async | gap | — | Not set from Odysseus | **B** | Implements changes |
-| `send.mcp_servers` | Inline MCP per send | Async | gap | — | — | **B** / Phase 3 | Replaces creation-time servers |
+| `send.mode_agent` | `mode: "agent"` | Async | shipped | `stream_cursor_agent_loop` | Cursor Agent sends with `{"model": model, "mode": "agent"}` | **B** | |
+| `send.mcp_servers` | Inline MCP per send | Async | partial | `cursor_mcp`, `stream_cursor_agent_loop` | Disabled by default; opt-in `cursor_agent_mcp_from_db` serializes enabled DB rows | **B** / Phase 3 | Replaces creation-time servers |
 | `send.local_force` | `local.force=True` (expire stuck run) | Local | gap | — | — | Phase 2 | Cloud uses 409 instead |
 | `send.idempotency_key` | Client idempotency key | Cloud | n/a | — | — | n/a | |
 | `opts.model_params` | `ModelSelection.params` (e.g. thinking) | Both | gap | — | Model ID only in admin | Phase 2 | Discover via `models.list()` |
@@ -197,11 +196,11 @@
 
 | ID | SDK capability | Surface | Status | Odysseus location | Behavior today | Plan | Notes |
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
-| `mcp.http_config` | `HttpMcpServerConfig` | Both | gap | — | Odysseus MCP admin separate | **B** / Phase 3 | OAuth via Cursor backend |
-| `mcp.stdio_config` | `StdioMcpServerConfig` | Both | gap | — | — | **B** | Cloud passes env into VM |
+| `mcp.http_config` | `HttpMcpServerConfig` | Both | partial | `cursor_mcp.serialize_cursor_mcp_server` | Opt-in DB bridge serializes HTTP/SSE URLs; no OAuth mapping | **B** / Phase 3 | OAuth via Cursor backend not mapped |
+| `mcp.stdio_config` | `StdioMcpServerConfig` | Both | partial | `cursor_mcp.serialize_cursor_mcp_server` | Opt-in DB bridge serializes command/args/env | **B** | Env values are shared with Cursor bridge/runtime |
 | `mcp.creation_time` | MCP on `Agent.create` | Both | gap | — | — | **B** | |
-| `mcp.workspace_file` | `.cursor/mcp.json` in cwd | Local | partial | — | Implicit via bridge cwd | **B** | Document for Plan B v1 |
-| `mcp.odysseus_admin` | Map `McpServer` DB rows → SDK | Both | gap | — | Native agent uses DB MCP | Phase 3 | Plan B §8 |
+| `mcp.workspace_file` | `.cursor/mcp.json` in cwd | Local | shipped | bridge cwd | Implicit via bridge cwd; documented default | **B** | |
+| `mcp.odysseus_admin` | Map `McpServer` DB rows → SDK | Both | partial | `cursor_mcp`, `chat_routes` | Explicit opt-in setting; skips per-tool disabled rows | Phase 3 | Default remains Cursor MCP config |
 
 ---
 
@@ -237,7 +236,7 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `ody.endpoint_preset` | `provider=cursor`, `cursor://local` | App | shipped | `model_routes`, admin UI | Workspace cwd in `provider_config` | A/C | |
 | `ody.supports_tools_false` | Cursor endpoints disable Odysseus tools | App | shipped | `model_routes` | `supports_tools=False` | A/C | |
-| `ody.chat_only_guard` | Compare/Research block; Agent unblocked | App | **partial** | `chat_routes.py`, `endpoint_resolver.py` | Agent → `stream_cursor_agent_loop`; Compare/Research still skip Cursor | **B** Phase 1 shipped | |
+| `ody.chat_only_guard` | Compare/Research block; Agent unblocked | App | shipped | `chat_routes.py`, `endpoint_resolver.py`, `bg_monitor.py` | Agent → `stream_cursor_agent_loop`; Compare/Research/utility/background auto-continue skip Cursor | **B** shipped | |
 | `ody.utility_exclude` | Utility resolver skips Cursor | App | shipped | `endpoint_resolver.py` | `exclude_cursor=True` | A/C | |
 | `ody.vision_fallback_exclude` | Vision fallback skips Cursor | App | shipped | `endpoint_resolver.py` | Same | A/C | |
 | `ody.task_http_guard` | No HTTP fallback to `cursor://` | App | shipped | `endpoint_resolver.py` | Background tasks can't POST cursor | A/C | |
@@ -255,8 +254,8 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 | Feature | Native Odysseus | With Cursor SDK (today) | Plan B approach |
 |---------|-----------------|-------------------------|-----------------|
 | Built-in tools (`agent_tools.py`) | `stream_agent_loop` | Not used for Cursor Chat | Disable; use Cursor tools |
-| MCP from admin DB | Wired in agent loop | Not mapped to SDK | `.cursor/mcp.json` or Phase 3 mapping |
-| Skills injection | `skills_manager` | Not passed to SDK | Text prefix on `send()` |
+| MCP from admin DB | Wired in agent loop | Opt-in DB bridge (`cursor_agent_mcp_from_db`), default off | `.cursor/mcp.json` by default; explicit opt-in for DB rows |
+| Skills injection | `skills_manager` | Tool index omitted for Cursor Agent | Text context only; no `manage_skills` tool prompt |
 | Memory / RAG tools | Agent tools + context | Not passed | Text prefix / read-only context |
 | Compare / Research modes | `stream_agent_loop` | Cursor blocked | Keep blocked or wont-fix |
 | Native image gen (`do_generate_image`) | Separate path for DALL·E etc. | Unrelated to Cursor `generateImage` | C+ maps Cursor tool separately |
@@ -266,9 +265,7 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 
 ## Maintenance
 
-- **After Plan C+:** Update rows `stream.tool_call`, `tool.generateImage`, and any new asset-serving helpers to **shipped**.
-- **After Plan B Phase 1:** `ody.chat_only_guard` → **partial** (Agent unblocked; Compare/Research still blocked). Update remaining Phase 2–4 rows when shipped.
-- **Plan B v2 second pass:** roadmap reframed in [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md); follow-up epics tracked in [cursor-agent-tab-backlog.md](./cursor-agent-tab-backlog.md) and gated on the [Decision log](./cursor-agent-tab-integration-plan.md#12-decision-log). Note: `bg_monitor` still runs the native loop for Cursor sessions (backlog B2c).
+- **After Plan C+ and Plan B follow-ups:** Chat `generateImage`, Agent `generateImage`, Cursor skills guard, background guard, mapper helpers, and optional MCP DB bridge are reflected above. B4 / Cloud Cursor agents remains a separate product plan.
 - **Re-verify** against Nia `71741e4c` when `cursor-sdk` is upgraded beyond `0.1.6` — follow [`CURSOR_SDK_UPGRADES.md`](../CURSOR_SDK_UPGRADES.md).
 
 **Tests to run after matrix-affecting code changes:**
@@ -280,5 +277,7 @@ python -m pytest -q
 Cursor-focused subset:
 
 ```bash
-pytest tests/test_cursor_adapter.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py tests/test_model_routes.py tests/test_cursor_admin_ui.py -q
+pytest tests/test_cursor_adapter.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py \
+       tests/test_cursor_agent.py tests/test_cursor_agent_skills.py tests/test_bg_monitor_cursor.py \
+       tests/test_cursor_mcp_bridge.py tests/test_model_routes.py tests/test_cursor_admin_ui.py -q
 ```
