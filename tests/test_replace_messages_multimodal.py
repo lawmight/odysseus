@@ -44,7 +44,7 @@ def manager(monkeypatch):
 def _make_session(sid, owner="alice"):
     db = _TS()
     try:
-        db.add(DbSession(id=sid, owner=owner, name="chat", model="gpt-4o",
+        db.add(DbSession(id=sid, owner=owner, name="chat", endpoint_url="", model="gpt-4o",
                          archived=False, message_count=1))
         db.commit()
     finally:
