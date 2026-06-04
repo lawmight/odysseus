@@ -16,7 +16,7 @@ Success looks like:
 1. User asks for an image in Chat on a Cursor endpoint.
 2. Odysseus streams tool progress (optional) and renders the result as an **`image_url`** SSE event (same path as other vision/image bubbles in `static/js/chat.js`).
 3. Generated assets are served from Odysseus uploads/gallery (or a documented bridge path), not raw filesystem paths in the browser.
-4. Agent mode + Cursor remains blocked (“Chat only”); tool surfacing does not expand Cursor into Agent tab.
+4. Agent mode + Cursor was blocked at Plan C+ ship time; Plan B Phase 1 later added Agent support (this plan remains Chat-focused).
 5. Session reload shows image bubbles via `metadata.tool_events` (see [cursor-plan-c-plus-polish.md](./cursor-plan-c-plus-polish.md)).
 
 ---
@@ -60,7 +60,7 @@ Reference: Cursor SDK already emits `tool_call` with `name: "generateImage"` on 
 ### 3.4 Tests
 
 - Unit: mock SDK `tool_call` stream → assert SSE shape includes `image_url` or `tool_output`.
-- Guard: Agent mode + Cursor still returns “Chat only” error (regression).
+- Regression: Compare/Research still skip Cursor endpoints (Agent uses Cursor engine since Plan B Phase 1).
 
 ---
 
@@ -91,5 +91,5 @@ Branch from main.
 |-------|-----|
 | Image gen in Chat | Cursor endpoint → prompt “generate a simple red circle PNG” → image bubble |
 | No path leak | Response URLs are under Odysseus uploads/gallery, not `file://` |
-| Agent guard | Agent + Cursor → clear “Chat only” error |
+| Mode guards | Compare/Research + Cursor → skipped; Agent + Cursor → streams via SDK |
 | Tests | `pytest tests/test_cursor_plan_c.py tests/test_cursor_adapter.py -q` + new tool tests |

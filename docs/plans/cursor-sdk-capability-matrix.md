@@ -1,7 +1,7 @@
 # Cursor SDK × Odysseus capability matrix
 
 **Last updated:** 2026-06-03  
-**Odysseus branch:** `main` @ `0696a03`  
+**Odysseus branch:** `main` @ `0a70975`  
 **Purpose:** Inventory every major Cursor Python SDK capability and map it to what Odysseus implements today. Use this to scope Plan C+, Plan B, and avoid surprise gaps.
 
 **Nia sources used:**
@@ -50,15 +50,17 @@
 
 ### Top gaps by user impact (fix or plan next)
 
-1. **`SendOptions.mode` (plan/agent)** — Agent tab Cursor engine (**B**)
-2. **Full tool mapping → `tool_start` / `tool_output`** — Agent tab (**B**)
-3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** / Phase 3)
+1. **`SendOptions.mode` (plan/agent)** — Phase 1 ships `agent` mode; plan mode polish (**B** Phase 2+)
+2. **Full tool mapping → `tool_start` / `tool_output`** — Phase 1 baseline shipped; expand coverage (**B** Phase 2+)
+3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** Phase 3)
 4. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
 5. **`local.force`** — recover stuck local runs (**Phase 2**)
 6. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
 7. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
 
 **Shipped (C+):** Chat `generateImage` → `tool_start` / `tool_output` / `image_url` ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)).
+
+**Shipped (B Phase 1):** Agent tab `stream_cursor_agent_loop` — Cursor SDK engine with tool cards ([#17](https://github.com/lawmight/odysseus/pull/17)).
 
 ### Plan C+ checklist (filter `Target plan = C+`)
 
@@ -234,7 +236,7 @@
 |----|----------------|---------|--------|-------------------|----------------|------|-------|
 | `ody.endpoint_preset` | `provider=cursor`, `cursor://local` | App | shipped | `model_routes`, admin UI | Workspace cwd in `provider_config` | A/C | |
 | `ody.supports_tools_false` | Cursor endpoints disable Odysseus tools | App | shipped | `model_routes` | `supports_tools=False` | A/C | |
-| `ody.chat_only_guard` | Agent/Compare/Research block | App | **blocked** | `chat_routes.py` ~973 | HTTP 400 clear error | **B** to unblock | |
+| `ody.chat_only_guard` | Compare/Research block; Agent unblocked | App | **partial** | `chat_routes.py`, `endpoint_resolver.py` | Agent → `stream_cursor_agent_loop`; Compare/Research still skip Cursor | **B** Phase 1 shipped | |
 | `ody.utility_exclude` | Utility resolver skips Cursor | App | shipped | `endpoint_resolver.py` | `exclude_cursor=True` | A/C | |
 | `ody.vision_fallback_exclude` | Vision fallback skips Cursor | App | shipped | `endpoint_resolver.py` | Same | A/C | |
 | `ody.task_http_guard` | No HTTP fallback to `cursor://` | App | shipped | `endpoint_resolver.py` | Background tasks can't POST cursor | A/C | |
@@ -264,7 +266,7 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 ## Maintenance
 
 - **After Plan C+:** Update rows `stream.tool_call`, `tool.generateImage`, and any new asset-serving helpers to **shipped**.
-- **After Plan B:** Update `send.mode_*`, `ody.chat_only_guard`, and tool rows to **shipped** or **partial**.
+- **After Plan B Phase 1:** `ody.chat_only_guard` → **partial** (Agent unblocked; Compare/Research still blocked). Update remaining Phase 2–4 rows when shipped.
 - **Re-verify** against Nia `71741e4c` when `cursor-sdk` is upgraded beyond `0.1.6`.
 
 **Tests to run after matrix-affecting code changes:**

@@ -11,26 +11,19 @@
 | **Matrix** | [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md) | SDK feature inventory vs Odysseus status (gaps, C+, B). |
 | — | [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md) | API/SDK facts and handoff snippets (shared by A/B/C). |
 
-**Implementation status (2026-06-03):** Plan A/C Chat BYOK **shipped on `main`**. Plan C+ **`generateImage` in Chat** shipped. Pre–Plan B cleanup **complete**. Next: [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md) (Plan B).
+**Implementation status (2026-06-03):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). Next: Plan B Phase 2–4 (context injection, MCP bridge, cloud) per [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md).
 
 ---
 
-## Pre–Plan B gate (recorded)
+## Post–Plan B Phase 1 (current)
 
 | Check | Result |
 |-------|--------|
-| **Commit** | `0696a03` on `main` (2026-06-03) |
-| **Full pytest** | `1486 passed, 1 skipped` (`python -m pytest -q`) |
-| **Agent + Cursor** | Blocked with HTTP 400 “Chat only” (expected until Plan B) |
-| **Plan B code** | **Not started** |
-| **CI** | GitHub Actions on `main` ([workflows](https://github.com/lawmight/odysseus/actions/workflows/ci.yml)); enable required checks per [CONTRIBUTING.md](../../CONTRIBUTING.md#branch-protection-maintainers) |
+| **Commit** | `0a70975` on `main` — `feat(agent): Cursor SDK engine for Agent mode (Plan B Phase 1)` |
+| **Agent + Cursor** | Routes through `stream_cursor_agent_loop` in Agent mode |
+| **Still blocked** | Compare / Research / utility resolvers skip Cursor (by design) |
+| **CI** | GitHub Actions on `main` ([workflows](https://github.com/lawmight/odysseus/actions/workflows/ci.yml)) |
 
-**Cleanup PRs:** [#15](https://github.com/lawmight/odysseus/pull/15) lockfile, [#16](https://github.com/lawmight/odysseus/pull/16) CI, optional SDK + `ci: data/` fix on `main`.
+### Pre–Plan B gate (archival)
 
-### Entry criteria before Plan B Phase 1
-
-- [x] `main` clean; `package.json` name pins lockfile
-- [x] Full pytest green locally @ `0696a03`
-- [x] Docs on `main` under `docs/plans/` (no `plan-docs-efe9` pointers)
-- [ ] GitHub required status checks enabled (maintainer)
-- [ ] Plan B product defaults in first Plan B PR description (`SendOptions(mode="agent")`, Compare/Research stay blocked)
+Recorded at `0696a03`: full pytest green, Agent blocked until Plan B — superseded by Phase 1 above.

@@ -1,8 +1,8 @@
 # Plan B: Cursor SDK for Odysseus Agent Tab
 
-**Status:** Design / pre-implementation  
+**Status:** **Phase 1 shipped** on `main` @ `0a70975` ([#17](https://github.com/lawmight/odysseus/pull/17)); Phases 2–4 pending  
 **Target repo:** Odysseus  
-**Verified against:** Odysseus workspace (2026-06-01), Nia (`abe7140b`, `71741e4c`), PyPI `cursor-sdk==0.1.6`
+**Verified against:** Odysseus workspace (2026-06-01), Nia (`abe7140b`, `71741e4c`), PyPI `cursor-sdk>=0.1.6`
 
 ---
 
@@ -296,13 +296,13 @@ Chat mode selector unchanged; engine picked by endpoint + mode.
 
 ## 12. Implementation phases
 
-### Phase 1 — Parallel engine (local)
+### Phase 1 — Parallel engine (local) — shipped
 
-- [ ] `stream_cursor_agent_loop()` with tool_start/tool_output mapping
-- [ ] `chat_routes.py` branch on cursor endpoint + agent mode
-- [ ] Disable `stream_agent_loop` when cursor active
-- [ ] Session `cursor_agent_id` persistence + resume
-- [ ] Manual test: file edit tool shows in UI
+- [x] `stream_cursor_agent_loop()` with tool_start/tool_output mapping
+- [x] `chat_routes.py` branch on cursor endpoint + agent mode
+- [x] Disable `stream_agent_loop` when cursor active
+- [x] Session `cursor_agent_id` persistence + resume
+- [ ] Manual test: file edit tool shows in UI (desk QA)
 
 ### Phase 2 — Context injection
 

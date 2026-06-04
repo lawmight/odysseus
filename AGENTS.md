@@ -270,7 +270,7 @@ PY
 
 ---
 
-## Cursor chat provider (Plan A)
+## Cursor provider (Chat + Agent)
 
 | Install context | Cursor SDK |
 |-----------------|------------|
@@ -283,9 +283,9 @@ PY
 - Install: `requirements-cursor.txt` (optional; auto on Cloud Agent VMs when env is detected)
 - Admin: **Settings → Add Models → API → Cursor (local)** (hidden until SDK is installed), workspace under `CURSOR_ALLOWED_WORKSPACE_ROOTS` (default: repo root)
 - Model listing uses the Cursor HTTP API; **Chat streaming** requires the SDK bridge on the Odysseus host
-- Chat mode only; Agent tab still uses OpenAI-compatible / Anthropic endpoints
+- **Chat** and **Agent** modes support Cursor when the session uses a Cursor endpoint (Plan B Phase 1 on `main`)
 
-See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** is [Plan B](docs/plans/cursor-agent-tab-integration-plan.md) (not started).
+See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 is shipped; Phase 2–4 (MCP bridge, cloud) remain in [Plan B](docs/plans/cursor-agent-tab-integration-plan.md).
 
 ---
 
