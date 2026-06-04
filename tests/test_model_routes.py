@@ -593,6 +593,36 @@ def test_list_model_endpoints_includes_cursor_metadata(cursor_route_env):
     assert json.loads(response[0]["provider_config"])["cwd"] == workspace
 
 
+def test_list_model_endpoints_cursor_plan_c_objects_count_as_visible(cursor_route_env):
+    """Plan C stores {id, displayName} in cached_models; list must not show 0/0."""
+    rows, workspace = cursor_route_env
+    entries = [
+        {"id": "composer-2.5", "displayName": "Composer 2.5"},
+        {"id": "gpt-4", "displayName": "GPT-4"},
+    ]
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur2",
+            name="Cursor (local)",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps(entries),
+            supports_tools=False,
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    response = list_endpoint(_fake_model_request(), include_meta=False)
+
+    assert response[0]["models"] == ["composer-2.5", "gpt-4"]
+    assert response[0]["hidden_count"] == 0
+    assert response[0]["online"] is True
+
+
 def test_create_cursor_endpoint_propagates_cursor_error(monkeypatch, cursor_route_env):
     _, workspace = cursor_route_env
 

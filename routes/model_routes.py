@@ -1268,11 +1268,12 @@ def setup_model_routes(model_discovery):
             results = []
             for r in rows:
                 # Use cached model list to avoid slow probe on every load
+                prov = _normalize_provider(getattr(r, "provider", None), r.base_url)
                 all_models = []
+                raw = None
                 if r.cached_models:
                     try:
                         raw = json.loads(r.cached_models)
-                        prov = _normalize_provider(getattr(r, "provider", None), r.base_url)
                         if prov == "cursor":
                             all_models = normalize_cached_cursor_models(raw)
                         else:
@@ -1289,7 +1290,12 @@ def setup_model_routes(model_discovery):
                     return m.get("id") if isinstance(m, dict) else str(m)
 
                 pinned = _normalize_model_ids(getattr(r, "pinned_models", None))
-                visible = _visible_models(all_models, r.hidden_models, pinned)
+                # Cursor caches Plan C {id, displayName} objects; _visible_models
+                # only understands string IDs (same as the create response).
+                visibility_src = (
+                    cached_model_ids(raw) if prov == "cursor" and raw is not None else all_models
+                )
+                visible = _visible_models(visibility_src, r.hidden_models, pinned)
                 display_by_id = {}
                 for m in all_models:
                     mid = _entry_id(m)
@@ -1297,7 +1303,7 @@ def setup_model_routes(model_discovery):
                         m.get("displayName") if isinstance(m, dict) else str(m)
                     )
                 models_display = [display_by_id.get(mid, mid) for mid in visible]
-                endpoint_provider = _normalize_provider(getattr(r, "provider", None), r.base_url)
+                endpoint_provider = prov
                 cursor_sdk_missing = endpoint_provider == "cursor" and not CURSOR_SDK_AVAILABLE
                 # Endpoint counts as reachable if it has any model — including
                 # admin-pinned IDs that a probe would never surface.
@@ -1438,12 +1444,21 @@ def setup_model_routes(model_discovery):
                     _db_dedup.commit()
                     _invalidate_models_cache()
                 _existing_pinned = _normalize_model_ids(getattr(existing, "pinned_models", None))
+                _existing_provider = _normalize_provider(
+                    getattr(existing, "provider", None), existing.base_url
+                )
+                _existing_cached = getattr(existing, "cached_models", None)
+                _existing_visible_src = (
+                    cached_model_ids(_existing_cached)
+                    if _existing_provider == "cursor"
+                    else _existing_cached
+                )
                 return {
                     "id": existing.id,
                     "name": existing.name,
                     "base_url": existing.base_url,
                     "models": _visible_models(
-                        getattr(existing, "cached_models", None),
+                        _existing_visible_src,
                         getattr(existing, "hidden_models", None),
                         existing.pinned_models,
                     ),
@@ -1779,7 +1794,16 @@ def setup_model_routes(model_discovery):
             chat_url = build_chat_url(base)
             if not model and (getattr(ep, "cached_models", None) or getattr(ep, "pinned_models", None)):
                 try:
-                    visible = _visible_models(ep.cached_models, getattr(ep, "hidden_models", None), getattr(ep, "pinned_models", None))
+                    _vis_src = (
+                        cached_model_ids(ep.cached_models)
+                        if _endpoint_provider == "cursor"
+                        else ep.cached_models
+                    )
+                    visible = _visible_models(
+                        _vis_src,
+                        getattr(ep, "hidden_models", None),
+                        getattr(ep, "pinned_models", None),
+                    )
                     if visible:
                         model = visible[0]
                 except Exception:
