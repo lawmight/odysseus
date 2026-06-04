@@ -270,7 +270,7 @@ PY
 
 ---
 
-## Cursor chat provider (Plan A)
+## Cursor provider (Chat + Agent)
 
 | Install context | Cursor SDK |
 |-----------------|------------|

@@ -1,7 +1,7 @@
 # Cursor SDK × Odysseus capability matrix
 
 **Last updated:** 2026-06-03  
-**Odysseus branch:** `main` @ `0696a03`  
+**Odysseus branch:** `main` @ `0a70975`  
 **Purpose:** Inventory every major Cursor Python SDK capability and map it to what Odysseus implements today. Use this to scope Plan C+, Plan B, and avoid surprise gaps.
 
 **Nia sources used:**
@@ -50,15 +50,17 @@
 
 ### Top gaps by user impact (fix or plan next)
 
-1. **`SendOptions.mode` (plan/agent)** — Agent tab Cursor engine (**B**)
-2. **Full tool mapping → `tool_start` / `tool_output`** — Agent tab (**B**)
-3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** / Phase 3)
+1. **`SendOptions.mode` (plan/agent)** — Phase 1 ships `agent` mode; plan mode polish (**B** Phase 2+)
+2. **Full tool mapping → `tool_start` / `tool_output`** — Phase 1 baseline shipped; expand coverage (**B** Phase 2+)
+3. **`SendOptions.mcp_servers`** — Cursor MCP vs Odysseus MCP admin (**B** Phase 3)
 4. **`ModelSelection.params`** — thinking effort / model variants in admin (**Phase 2**)
 5. **`local.force`** — recover stuck local runs (**Phase 2**)
 6. **410 `stream_expired` recovery** — poll run after SSE dies (**Phase 3**)
 7. **Cloud agents / repos / PRs** — separate product surface (**wont-fix** v1)
 
 **Shipped (C+):** Chat `generateImage` → `tool_start` / `tool_output` / `image_url` ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)).
+
+**Shipped (B Phase 1):** Agent tab `stream_cursor_agent_loop` — Cursor SDK engine with tool cards ([#17](https://github.com/lawmight/odysseus/pull/17)).
 
 ### Plan C+ checklist (filter `Target plan = C+`)
 

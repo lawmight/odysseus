@@ -60,7 +60,7 @@ Reference: Cursor SDK already emits `tool_call` with `name: "generateImage"` on 
 ### 3.4 Tests
 
 - Unit: mock SDK `tool_call` stream → assert SSE shape includes `image_url` or `tool_output`.
-- Guard: Agent mode + Cursor still returns “Chat only” error (regression).
+- Regression: Compare/Research still skip Cursor endpoints (Agent uses Cursor engine since Plan B Phase 1).
 
 ---
 
@@ -91,5 +91,5 @@ Branch from main.
 |-------|-----|
 | Image gen in Chat | Cursor endpoint → prompt “generate a simple red circle PNG” → image bubble |
 | No path leak | Response URLs are under Odysseus uploads/gallery, not `file://` |
-| Agent guard | Agent + Cursor → clear “Chat only” error |
+| Mode guards | Compare/Research + Cursor → skipped; Agent + Cursor → streams via SDK |
 | Tests | `pytest tests/test_cursor_plan_c.py tests/test_cursor_adapter.py -q` + new tool tests |

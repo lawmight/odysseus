@@ -357,7 +357,7 @@ npx -y @playwright/mcp@latest --version
 
 That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
 
-### Cursor as a chat provider
+### Cursor as a provider (Chat + Agent)
 
 | Install context | Cursor SDK |
 |-----------------|------------|
