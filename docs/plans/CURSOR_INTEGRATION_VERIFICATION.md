@@ -22,7 +22,7 @@
 |------|----------------|--------------|
 | `cursor-sdk` (PyPI) | **0.1.6** (also 0.1.0–0.1.5 exist) | `pip index versions cursor-sdk` on agent VM |
 | Install command (docs) | `uv pip install cursor-sdk` | Nia source `71741e4c` (python.md) |
-| Recommended pin | `cursor-sdk>=0.1.6` | PyPI latest + docs examples |
+| Recommended pin | `cursor-sdk>=0.1.6,<0.2` | [`requirements-cursor.txt`](../../requirements-cursor.txt); bump via [`CURSOR_SDK_UPGRADES.md`](../CURSOR_SDK_UPGRADES.md) |
 | Odysseus Python | **3.11+** (README) | `README.md` |
 | Odysseus stack | FastAPI, httpx, SQLAlchemy | `requirements.txt` |
 | Cloud Agents API | **v1 public beta** | Nia `abe7140b` (endpoints.md intro) |

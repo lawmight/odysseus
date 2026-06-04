@@ -428,6 +428,16 @@ Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** 
 
 Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). Multi-turn Chat and Agent reuse a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. **Compare**, **Deep Research**, and utility/vision background tasks still skip Cursor endpoints — see [`docs/plans/cursor-agent-tab-integration-plan.md`](docs/plans/cursor-agent-tab-integration-plan.md) for Phase 2–4 (MCP bridge, cloud runtime).
 
+#### SDK version sensitivity
+
+The integration depends on **[`cursor-sdk`](https://pypi.org/project/cursor-sdk/)** (currently pinned in [`requirements-cursor.txt`](requirements-cursor.txt)). The package and [Python SDK docs](https://cursor.com/docs/sdk/python) evolve quickly — tool events, `generateImage` payloads, and bridge behavior can change between releases.
+
+- **Before upgrading:** follow [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) (checklist + pytest subset).
+- **Manual smoke:** [`docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md`](docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md) (Chat + Agent checks before Plan B backlog work).
+- **Living spec:** [`docs/plans/cursor-sdk-capability-matrix.md`](docs/plans/cursor-sdk-capability-matrix.md) maps SDK capabilities to Odysseus code.
+- **Billing / dashboard:** local SDK usage is charged to **your** API key ([Integrations](https://cursor.com/dashboard/integrations)); it does **not** create rows on the [Cloud Agents](https://cursor.com/dashboard/cloud-agents) dashboard (that product is a separate cloud-runtime API).
+- **Production:** avoid unbounded `pip install -U cursor-sdk` without re-running the upgrade doc; Docker images should install the pinned `requirements-cursor.txt` and rebuild after pin changes.
+
 ## Architecture
 ```
 app.py                   # FastAPI entry point

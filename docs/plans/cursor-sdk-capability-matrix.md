@@ -1,6 +1,7 @@
 # Cursor SDK × Odysseus capability matrix
 
-**Last updated:** 2026-06-03  
+**Last updated:** 2026-06-04  
+**Verified `cursor-sdk`:** `0.1.6` (see [`requirements-cursor.txt`](../../requirements-cursor.txt) and [`CURSOR_SDK_UPGRADES.md`](../CURSOR_SDK_UPGRADES.md))  
 **Odysseus branch:** `main` @ `0a70975`  
 **Purpose:** Inventory every major Cursor Python SDK capability and map it to what Odysseus implements today. Use this to scope Plan C+, Plan B, and avoid surprise gaps.
 
@@ -268,7 +269,7 @@ Features Odysseus **Agent mode** provides that a Cursor engine would **not** aut
 - **After Plan C+:** Update rows `stream.tool_call`, `tool.generateImage`, and any new asset-serving helpers to **shipped**.
 - **After Plan B Phase 1:** `ody.chat_only_guard` → **partial** (Agent unblocked; Compare/Research still blocked). Update remaining Phase 2–4 rows when shipped.
 - **Plan B v2 second pass:** roadmap reframed in [cursor-agent-tab-integration-plan.md](./cursor-agent-tab-integration-plan.md); follow-up epics tracked in [cursor-agent-tab-backlog.md](./cursor-agent-tab-backlog.md) and gated on the [Decision log](./cursor-agent-tab-integration-plan.md#12-decision-log). Note: `bg_monitor` still runs the native loop for Cursor sessions (backlog B2c).
-- **Re-verify** against Nia `71741e4c` when `cursor-sdk` is upgraded beyond `0.1.6`.
+- **Re-verify** against Nia `71741e4c` when `cursor-sdk` is upgraded beyond `0.1.6` — follow [`CURSOR_SDK_UPGRADES.md`](../CURSOR_SDK_UPGRADES.md).
 
 **Tests to run after matrix-affecting code changes:**
 
