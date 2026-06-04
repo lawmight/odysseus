@@ -36,10 +36,13 @@ Windows is not actively tested. Docker on Linux or a Linux/macOS manual install 
 Run the smallest relevant checks for your change, or use the combined preflight script:
 
 ```bash
-bash scripts/ci-preflight.sh --fork          # full fork gate before a PR
-bash scripts/ci-preflight.sh --upstream      # upstream-oriented (see docs/guides/UPSTREAM_PR_GUIDELINES.md)
-node scripts/validate-pr-body.js my-pr-body.md   # same rules as the PR description bot
+bash scripts/scaffold-pr-body.sh --issue NNNN --summary "What changed and why" -o pr-body.md
+node scripts/validate-pr-body.js --explain pr-body.md   # same rules as the PR description bot
+bash scripts/ci-preflight.sh --fork --require-pr-body   # uses pr-body.md when present
+bash scripts/ci-preflight.sh --upstream                 # upstream-oriented (see docs/guides/UPSTREAM_PR_GUIDELINES.md)
 ```
+
+Optional: install `scripts/git-hooks/pre-push-pr-body.sample` as `.git/hooks/pre-push` to validate `pr-body.md` before every push.
 
 Individual commands:
 
@@ -104,7 +107,7 @@ Manual smoke (not on every PR): trigger the `docker-smoke` job via **Actions →
 
 ## Pull request guides
 
-- [Upstream PR guidelines](docs/guides/UPSTREAM_PR_GUIDELINES.md) — issue-first workflow, template rules, Cloud Agent video demos, fork vs upstream.
+- [Upstream PR guidelines](docs/guides/UPSTREAM_PR_GUIDELINES.md) — the five description checks, scaffold workflow, Cloud Agent video demos, fork vs upstream.
 - [CI parity report](docs/guides/CI_PARITY.md) — auto-generated comparison with `pewdiepie-archdaemon/odysseus` (run `bash scripts/ci-parity-report.sh` to refresh).
 
 ## Pull Requests

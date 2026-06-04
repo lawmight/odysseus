@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Optional local hook: validate pr-body.md before push.
+# Install: cp scripts/git-hooks/pre-push-pr-body.sample .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+BODY="${ROOT}/pr-body.md"
+
+if [[ -f "$BODY" ]]; then
+  node "${ROOT}/scripts/validate-pr-body.js" "$BODY"
+fi
+
+exit 0

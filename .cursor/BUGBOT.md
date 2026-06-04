@@ -2,7 +2,7 @@
 
 Project-specific review context for [Cursor Bugbot](https://cursor.com/docs/bugbot). CI runs pytest and secret scans; this file covers invariants those gates cannot express.
 
-Before opening a PR, follow [docs/guides/UPSTREAM_PR_GUIDELINES.md](../docs/guides/UPSTREAM_PR_GUIDELINES.md) and run `bash scripts/ci-preflight.sh`.
+Before opening a PR, follow [docs/guides/UPSTREAM_PR_GUIDELINES.md](../docs/guides/UPSTREAM_PR_GUIDELINES.md), run `bash scripts/scaffold-pr-body.sh` + `node scripts/validate-pr-body.js pr-body.md`, then `bash scripts/ci-preflight.sh --require-pr-body`. Do not use bot-generated PR summaries as the only description.
 
 ## Security and auth
 
