@@ -498,6 +498,9 @@ async def test_webhook_tool_reuses_private_url_validation():
         )
     finally:
         monkeypatch.undo()
+        sys.modules.pop("src.webhook_manager", None)
+        import importlib
+        importlib.import_module("src.webhook_manager")
 
     assert result["exit_code"] == 1
     assert "private/internal" in result["error"]
