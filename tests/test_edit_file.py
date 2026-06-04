@@ -11,7 +11,7 @@ from src.tool_security import (
     is_public_blocked_tool,
     blocked_tools_for_owner,
 )
-from src.tool_execution import _do_edit_file, execute_tool_block
+from src.tool_execution import _do_edit_file
 from src.agent_tools import ToolBlock
 
 
@@ -35,11 +35,15 @@ def test_blocked_tools_for_owner_includes_edit_file_for_non_admin(monkeypatch):
 async def test_edit_file_blocked_at_execution_for_non_admin(monkeypatch, tmp_path):
     # Execution-level gate: a non-admin owner must be refused even if the tool
     # reaches execute_tool_block (including single-user / auth-not-configured).
-    import src.tool_execution as te
-    import src.tool_security as ts
+    # Patch the name bound on src.tool_execution (not tool_security): _owner_is_admin
+    # calls that import. Import execute_tool_block here so a prior test reload of
+    # src.tool_execution cannot leave a stale dispatcher attached to old globals.
+    monkeypatch.setattr(
+        "src.tool_execution.owner_is_admin_or_single_user",
+        lambda owner: False,
+    )
+    from src.tool_execution import execute_tool_block
 
-    monkeypatch.setattr(te, "_owner_is_admin", lambda owner: False)
-    monkeypatch.setattr(ts, "owner_is_admin_or_single_user", lambda owner: False)
     p = tmp_path / "ef_block.txt"
     p.write_text("a\n", encoding="utf-8")
     _desc, result = await execute_tool_block(
