@@ -2,8 +2,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 
 def test_rag_id_stability_across_processes():
     # Run helper in subprocesses with different PYTHONHASHSEED values to ensure cross-process stability

@@ -35,6 +35,13 @@ if "src.database" not in sys.modules:
     _db.ModelEndpoint = MagicMock()
     sys.modules["src.database"] = _db
 
+# Prefer the real src.database shim when SQLAlchemy is installed (llm_core cache lookups).
+if _has_module("sqlalchemy"):
+    try:
+        importlib.import_module("src.database")
+    except Exception:
+        pass
+
 # Several route tests stub `core.database` at import time with a bare
 # ModuleType that lacks ORM symbols. Preload the real module when SQLAlchemy
 # is installed so later tests (e.g. task scheduler delivery) can import Base.

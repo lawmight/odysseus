@@ -21,7 +21,7 @@ function validatePrDescription(body) {
   }
 
   const linkedSection = sectionText(body, 'Linked Issue');
-  const hasIssueRef = /#\d+/.test(linkedSection) || /\/issues\/\d+/.test(linkedSection);
+  const hasIssueRef = /#\d+\b/.test(linkedSection) || /\/issues\/\d+/.test(linkedSection);
   if (!linkedSection || !hasIssueRef) {
     problems.push('**Linked Issue** — add a reference like `Fixes #NNN`, a bare `#NNN`, or a link to the issue.');
   }
@@ -36,8 +36,8 @@ function validatePrDescription(body) {
   }
 
   const howTo = sectionText(body, 'How to Test');
-  if (!howTo || !/\d+\.\s*\S/.test(howTo)) {
-    problems.push('**How to Test** — add at least one numbered step a reviewer can follow to verify this works.');
+  if (howTo.length < 30) {
+    problems.push('**How to Test** — explain how a reviewer can verify this change. Numbered steps, the commands you ran, or a short code block all work — give a sentence or two of real detail (not just "tested locally").');
   }
 
   return problems;
