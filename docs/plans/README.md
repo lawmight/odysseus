@@ -11,9 +11,11 @@
 | **C+ polish** | [cursor-plan-c-plus-polish.md](./cursor-plan-c-plus-polish.md) | **Shipped:** reload `tool_events`, gallery dedupe, stronger tests. |
 | **Matrix** | [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md) | SDK feature inventory vs Odysseus status (gaps, C+, B). |
 | **Upgrades** | [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md) | Pin policy, checklist, and regression hotspots when `cursor-sdk` changes. |
+| **Smoke** | [CURSOR_PRE_PLAN_B_SMOKE.md](./CURSOR_PRE_PLAN_B_SMOKE.md) | Manual Chat + Agent checks before Plan B backlog (B2a–B4). |
 | — | [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md) | API/SDK facts and handoff snippets (shared by A/B/C). |
+| **Ship #23** | [merged-pr-23-cursor-sdk-upgrades.md](./merged-pr-23-cursor-sdk-upgrades.md) | **Shipped** @ `7188279` ([#23](https://github.com/lawmight/odysseus/pull/23)): Cursor 0/0 model count fix + SDK upgrade docs. |
 
-**Implementation status (2026-06-04):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). Plan B was given a [v2 second pass](./cursor-agent-tab-integration-plan.md): Phase 2 context injection is mostly already covered by the shared preface; remaining work (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud) is tracked in the [backlog](./cursor-agent-tab-backlog.md) and gated on the [Decision log](./cursor-agent-tab-integration-plan.md#12-decision-log).
+**Implementation status (2026-06-04):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). **PR #23** added the Cursor endpoint list fix, [upgrade playbook](../CURSOR_SDK_UPGRADES.md), and [pre–Plan B smoke](./CURSOR_PRE_PLAN_B_SMOKE.md) on `main` @ `7188279`. Plan B was given a [v2 second pass](./cursor-agent-tab-integration-plan.md): Phase 2 context injection is mostly already covered by the shared preface; remaining work (skills semantics, background-job guard, optional `generateImage` parity, MCP, cloud) is tracked in the [backlog](./cursor-agent-tab-backlog.md) and gated on the [Decision log](./cursor-agent-tab-integration-plan.md#12-decision-log).
 
 ---
 
