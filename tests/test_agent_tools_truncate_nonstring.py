@@ -4,6 +4,13 @@ It did `len(text)` directly, so `_truncate(None)` raised TypeError. Returning
 the raw non-string just moves the crash downstream (callers treat it as text),
 so non-strings are now coerced to a string and still truncated.
 """
+import sys
+from unittest.mock import MagicMock
+
+# test_agent_loop.py may stub this module at collection time; reload the real one.
+if isinstance(sys.modules.get("src.agent_tools"), MagicMock):
+    sys.modules.pop("src.agent_tools", None)
+
 from src.agent_tools import _truncate
 
 

@@ -1,16 +1,22 @@
 """Tests for agent_loop.py — _detect_admin_intent, _compute_final_metrics,
 and _append_tool_results. Uses mock imports to avoid loading the full app stack."""
 
+import importlib.util
 import sys
 from unittest.mock import MagicMock
 
+# When SQLAlchemy is installed (normal dev/CI), keep the real ORM modules so
+# later tests can import core.database.Base. Only stub them when SQLAlchemy
+# is missing (conftest may have replaced it with MagicMock).
+_sqlalchemy_available = importlib.util.find_spec("sqlalchemy") is not None
 _MOCKED_IMPORTS = [
     'sqlalchemy', 'sqlalchemy.orm', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
     'sqlalchemy.ext.hybrid', 'sqlalchemy.sql', 'sqlalchemy.sql.expression',
     'src.database',
     'src.agent_tools',
-    'core.models', 'core.database',
 ]
+if not _sqlalchemy_available:
+    _MOCKED_IMPORTS.extend(['core.models', 'core.database'])
 _INJECTED_IMPORT_STUBS = {}
 _PREEXISTING_AGENT_LOOP = sys.modules.get("src.agent_loop")
 
@@ -38,6 +44,7 @@ try:
         _detect_admin_intent,
         _compute_final_metrics,
         _append_tool_results,
+        _MCP_KEYWORDS,
     )
     _IMPORTED_AGENT_LOOP = sys.modules.get("src.agent_loop")
 finally:
@@ -55,6 +62,10 @@ def test_import_stubs_do_not_leak_into_later_tests():
     assert leaked == []
     if _PREEXISTING_AGENT_LOOP is None:
         assert sys.modules.get("src.agent_loop") is not _IMPORTED_AGENT_LOOP
+
+
+def test_mcp_keyword_gate_matches_literal_mcp_requests():
+    assert "mcp" in _MCP_KEYWORDS
 
 
 # ---------------------------------------------------------------------------

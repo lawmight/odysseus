@@ -23,6 +23,7 @@ silently mutates a file owned by a different user AND overwrites the
 
 import os
 import sys
+import types
 import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -32,12 +33,31 @@ import pytest
 
 # ── module-load stubbing (matches other tests in this repo) ──────────
 # Stub heavy deps so importing the skills manager doesn't pull DB / FastAPI.
-for _mod in ("sqlalchemy", "sqlalchemy.orm", "sqlalchemy.ext", "sqlalchemy.ext.declarative"):
+for _mod in [
+    "sqlalchemy", "sqlalchemy.orm", "sqlalchemy.ext",
+    "sqlalchemy.ext.declarative", "src.database",
+]:
     if _mod not in sys.modules:
         try:
             __import__(_mod)
         except ImportError:
             sys.modules[_mod] = MagicMock()
+
+
+# Provide a no-op atomic_write_text for SkillsManager._write_skill. Only
+# install when the real module is not already loaded (conftest preloads it
+# for AuthManager and other persistence tests).
+def _fake_atomic_write_text(path, content, **kw):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(content, encoding="utf-8")
+
+if "core.atomic_io" not in sys.modules:
+    _fake_core = types.ModuleType("core.atomic_io")
+    _fake_core.atomic_write_text = _fake_atomic_write_text
+    _fake_core.atomic_write_json = lambda p, d, **kw: Path(p).write_text(
+        "{}", encoding="utf-8"
+    )
+    sys.modules["core.atomic_io"] = _fake_core
 
 from services.memory.skills import SkillsManager  # noqa: E402
 from services.memory.skill_format import Skill, slugify  # noqa: E402

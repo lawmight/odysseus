@@ -161,6 +161,22 @@ def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
     return is_vision_model(model_name)
 
 
+def chat_accepts_image_attachments(model_name: str, endpoint_url: str) -> bool:
+    """True when the active chat endpoint can receive images in the user turn.
+
+    Uses LM Studio capability probes and name heuristics when available.
+    Cursor Chat uses the SDK (SDKImage), not the Settings → Vision sidecar.
+    """
+    if model_supports_vision(model_name, endpoint_url):
+        return True
+    try:
+        from src.providers.cursor_adapter import is_cursor_url
+
+        return is_cursor_url(endpoint_url or "")
+    except Exception:
+        return False
+
+
 def validate_message(message: str) -> str:
     """Validate message input."""
     if not message:

@@ -83,7 +83,8 @@ def create_default_admin():
 
         # Priority: env vars > interactive prompt > random password
         username = os.getenv("ODYSSEUS_ADMIN_USER", "").strip().lower()
-        password = os.getenv("ODYSSEUS_ADMIN_PASSWORD", "").strip()
+        password_env = os.getenv("ODYSSEUS_ADMIN_PASSWORD")
+        password = (password_env or "").strip()
 
         if username and password:
             # Both provided via env — use them directly
@@ -109,13 +110,15 @@ def create_default_admin():
         with open(auth_path, "w", encoding="utf-8") as f:
             json.dump(auth_data, f, indent=2)
 
-        if sys.stdin.isatty() and not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+        if sys.stdin.isatty() and not password_env and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
             print(f"  [ok] Admin account created ({username})")
         else:
             print(f"  [ok] Initial admin user created ({username})")
-            if not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+            if password_env:
+                print("        Temporary password set via ODYSSEUS_ADMIN_PASSWORD (value not printed)")
+            else:
                 print(f"        Temporary password: {password}")
-                print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
+            print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
         return "created"
     except ImportError:
         print("  [warn] bcrypt not installed — skipping admin user creation")
@@ -166,6 +169,14 @@ def check_deps():
     elif os.name != "nt":
         print("  [ok] tmux installed")
 
+    print("\n  [info] Cursor Chat (optional): pip install -r requirements-cursor.txt")
+
+
+def admin_password_hint():
+    if os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+        return "Login with the admin username and your ODYSSEUS_ADMIN_PASSWORD value."
+    return "Login with the admin username and temporary password printed above."
+
 
 def main():
     print("\n=== Odysseus Setup ===\n")
@@ -206,7 +217,12 @@ def main():
 
     # Cleaned, action-focused final instruction strings
     if admin_status == "created":
-        print("Login with your admin credentials.\n")
+        if sys.stdin.isatty() and not os.getenv("ODYSSEUS_ADMIN_PASSWORD") and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
+            print("Login with your admin credentials.\n")
+        elif not os.getenv("ODYSSEUS_SKIP_RUN_HINT"):
+            print(f"{admin_password_hint()}\n")
+        else:
+            print("Login with the admin username and temporary password printed above.\n")
     elif admin_status == "exists":
         print("Login with your existing admin credentials.\n")
     elif admin_status == "skipped":

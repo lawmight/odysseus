@@ -36,8 +36,16 @@ def _route(router, path, method="GET"):
 
 @pytest.fixture
 def archived_endpoint(monkeypatch):
-    import routes.session_routes as sr
+    import importlib
     from unittest.mock import MagicMock
+
+    # Earlier tests may stub src.request_models; reload so FastAPI sees real models.
+    import src.request_models as request_models
+    if isinstance(getattr(request_models, "SessionResponse", None), MagicMock):
+        importlib.reload(request_models)
+    import routes.session_routes as sr
+    if isinstance(getattr(sr, "SessionResponse", None), MagicMock):
+        importlib.reload(sr)
 
     monkeypatch.setattr(sr, "SessionLocal", _TS)
     monkeypatch.setattr(sr, "effective_user", lambda request: "alice")

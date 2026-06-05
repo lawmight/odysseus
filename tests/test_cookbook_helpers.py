@@ -117,6 +117,10 @@ def test_pip_install_fallback_chain_allows_custom_python_command():
     assert chain.count("bash -c '") == 2
 
 
+@pytest.mark.skipif(
+    sys.prefix == sys.base_prefix,
+    reason="requires an active virtualenv (CI uses system Python)",
+)
 def test_pip_install_fallback_chain_propagates_failure_in_venv():
     """When base install fails inside a venv, the chain must exit non-zero.
 
@@ -139,7 +143,7 @@ def test_pip_install_fallback_chain_propagates_failure_in_venv():
         ["bash", "-c", script],
         capture_output=True, text=True, timeout=10,
     )
-    assert "user_attempt" not in result.stdout
+    assert "user_attempt" not in result.stdout.strip()
     assert result.returncode != 0, "Chain should propagate failure when base fails in venv"
 
 

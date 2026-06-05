@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 
+
 def test_rag_id_stability_across_processes():
     # Run helper in subprocesses with different PYTHONHASHSEED values to ensure cross-process stability
     cmd = [sys.executable, "-c", "from src.rag_vector import _generate_doc_id; print(_generate_doc_id('test_text_hash'))"]

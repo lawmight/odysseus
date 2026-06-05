@@ -5,7 +5,7 @@ names. If one isn't recognized as vision-capable, the image attachment is
 stripped from the request before it reaches the model, so it silently never
 sees the picture.
 """
-from src.chat_helpers import is_vision_model
+from src.chat_helpers import is_vision_model, chat_accepts_image_attachments
 
 
 def test_recognizes_local_and_hosted_vision_models():
@@ -46,3 +46,8 @@ def test_new_keywords_do_not_overmatch_text_models():
     # The added families must not flag their text-only siblings.
     for name in ["gemma2:9b", "gemma:7b", "llama3.3", "mistral-small", "phi-3-mini"]:
         assert not is_vision_model(name), f"{name!r} should not be flagged as vision"
+
+
+def test_cursor_chat_endpoint_accepts_images_without_vision_keyword():
+    assert chat_accepts_image_attachments("composer-2.5", "cursor://local")
+    assert not chat_accepts_image_attachments("qwen2.5:3b", "http://localhost:11434/v1")

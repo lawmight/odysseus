@@ -57,6 +57,40 @@ def _content_to_text(content) -> str:
     return ""
 
 
+def _message_role(message) -> str:
+    if isinstance(message, ChatMessage):
+        return message.role or ""
+    if isinstance(message, dict):
+        return message.get("role", "") or ""
+    return getattr(message, "role", "") or ""
+
+
+def _message_text(message) -> str:
+    if isinstance(message, ChatMessage):
+        content = message.content
+    elif isinstance(message, dict):
+        content = message.get("content")
+    else:
+        content = getattr(message, "content", None)
+    return _content_to_text(content)
+
+
+def _message_metadata(message) -> dict:
+    if isinstance(message, ChatMessage):
+        metadata = message.metadata
+    elif isinstance(message, dict):
+        metadata = message.get("metadata")
+    else:
+        metadata = getattr(message, "metadata", None)
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _reject_compact_during_active_run(session_id: str) -> None:
+    from src import agent_runs
+    if agent_runs.is_active(session_id):
+        raise HTTPException(409, "Session has an active run; try compacting after it finishes")
+
+
 def _verify_session_owner(request: Request, session_id: str, session_manager=None):
     """Verify the current user owns the session. Raises 404 if not.
 
@@ -295,6 +329,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         user = get_current_user(request)
         endpoint_api_key = ""
         endpoint_base_url = ""
+        endpoint_provider_config = None
         _reject_raw_endpoint_url_for_non_admin(request, user, endpoint_id, endpoint_url)
         if endpoint_id and endpoint_id.strip():
             from core.database import ModelEndpoint
@@ -313,6 +348,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                     raise HTTPException(400, "Model endpoint no longer exists")
                 endpoint_base_url = endpoint_row.base_url or ""
                 endpoint_api_key = endpoint_row.api_key or ""
+                endpoint_provider_config = getattr(endpoint_row, "provider_config", None)
                 endpoint_url = build_chat_url(normalize_base(endpoint_base_url))
             finally:
                 _db.close()
@@ -377,15 +413,15 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             owner=user,
         )
         # Set auth headers for custom API-key endpoints
-        resolved_key = request_api_key
-        resolved_base = endpoint_url
-        if not resolved_key and endpoint_api_key:
-            resolved_key = endpoint_api_key
-            resolved_base = endpoint_base_url
+        resolved_key = request_api_key or endpoint_api_key
+        resolved_base = endpoint_base_url or endpoint_url
+        provider_config = None if request_api_key else endpoint_provider_config
         if resolved_key:
             from src.endpoint_resolver import build_headers
-            session.headers = build_headers(resolved_key, resolved_base)
+            session.headers = build_headers(resolved_key, resolved_base, provider_config)
             _persist_session_headers(sid, session.headers)
+        elif session.headers:
+            session_manager.save_sessions()
         # Fire webhook (sync-safe)
         if webhook_manager:
             webhook_manager.fire_and_forget("session.created", {
@@ -435,6 +471,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             _reject_raw_endpoint_url_for_non_admin(request, user, endpoint_id, endpoint_url)
             endpoint_api_key = ""
             endpoint_base_url = ""
+            endpoint_provider_config = None
             if endpoint_id:
                 from core.database import ModelEndpoint
                 from src.auth_helpers import owner_filter
@@ -452,6 +489,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                         raise HTTPException(400, "Model endpoint no longer exists")
                     endpoint_base_url = ep.base_url or ""
                     endpoint_api_key = ep.api_key or ""
+                    endpoint_provider_config = getattr(ep, "provider_config", None)
                     endpoint_url = build_chat_url(normalize_base(endpoint_base_url))
                 finally:
                     _db.close()
@@ -460,7 +498,9 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             # Update auth headers from the endpoint's stored API key
             if endpoint_api_key:
                 from src.endpoint_resolver import build_headers
-                session.headers = build_headers(endpoint_api_key, endpoint_base_url)
+                session.headers = build_headers(
+                    endpoint_api_key, endpoint_base_url, endpoint_provider_config
+                )
             else:
                 session.headers = {}
             # Persist to DB
@@ -872,6 +912,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             session = session_manager.get_session(session_id)
         except KeyError:
             raise HTTPException(404, f"Session {session_id} not found")
+        _reject_compact_during_active_run(session_id)
 
         history = list(session.history or [])
         if len(history) < 6:
@@ -897,7 +938,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
 
         prior_compactions = sum(
             1 for m in history
-            if (m.metadata or {}).get("compacted") or "[Conversation summary" in (m.content or "")
+            if _message_metadata(m).get("compacted") or "[Conversation summary" in _message_text(m)
         )
         prompt = SELF_SUMMARY_SYSTEM_PROMPT.replace(
             "{count}", str(len(older))
@@ -905,7 +946,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             "{n}", str(prior_compactions + 1)
         )
         convo_text = "\n".join(
-            f"{m.role.upper()}: {(m.content or '')[:2000]}"
+            f"{_message_role(m).upper()}: {_message_text(m)[:2000]}"
             for m in older
         )
         try:

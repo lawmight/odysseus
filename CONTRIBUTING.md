@@ -31,7 +31,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Manual development uses Python 3.11+:
+Manual development uses Python 3.11+ (CI uses 3.12):
 
 ```bash
 python3 -m venv venv
@@ -44,7 +44,18 @@ Windows is not actively tested. Docker on Linux or a Linux/macOS manual install 
 
 ## Running Checks
 
-Run the smallest relevant checks for your change:
+Run the smallest relevant checks for your change, or use the combined preflight script:
+
+```bash
+bash scripts/scaffold-pr-body.sh --issue NNNN --summary "What changed and why" -o pr-body.md
+node scripts/validate-pr-body.js --explain pr-body.md   # same rules as the PR description bot
+bash scripts/ci-preflight.sh --fork --require-pr-body   # uses pr-body.md when present
+bash scripts/ci-preflight.sh --upstream                 # upstream-oriented (see docs/guides/UPSTREAM_PR_GUIDELINES.md)
+```
+
+Optional: install `scripts/git-hooks/pre-push-pr-body.sample` as `.git/hooks/pre-push` to validate `pr-body.md` before every push.
+
+Individual commands:
 
 ```bash
 python -m pytest
@@ -61,6 +72,54 @@ docker compose logs --tail=120 odysseus
 ```
 
 Mention what you ran in the pull request description. If you could not run a check, say so.
+
+## Continuous Integration
+
+Every pull request to `main` runs [GitHub Actions](.github/workflows/) checks:
+
+| Check | Workflow | What it does |
+|-------|----------|--------------|
+| `test` | [ci.yml](.github/workflows/ci.yml) | Full `pytest` suite (Python 3.12, Node 20 for JS tests) |
+| `syntax` | [ci.yml](.github/workflows/ci.yml) | `py_compile` on Python modules; `node --check` on `static/js/*.js` |
+| `secrets` | [ci.yml](.github/workflows/ci.yml) | Scans for committed API keys and tokens ([scripts/ci-secret-scan.sh](scripts/ci-secret-scan.sh)) |
+| `docker-config` | [docker.yml](.github/workflows/docker.yml) | `docker compose config` |
+| `docker-build` | [docker.yml](.github/workflows/docker.yml) | `docker build` for the Odysseus image |
+
+Dependabot opens weekly PRs for Python, npm, and Docker base image updates ([dependabot.yml](.github/dependabot.yml)).
+
+### Branch protection (maintainers)
+
+After workflows are enabled on GitHub, configure **Settings → Branches → `main`**:
+
+**Required status checks**
+
+- `test`
+- `syntax`
+- `secrets`
+- `docker-config`
+- `docker-build`
+
+**Cursor Bugbot (optional)**
+
+- Add the `Cursor Bugbot` check if you want every PR to receive an AI review.
+- By default Bugbot reports `neutral` when it finds issues — it does **not** block merge unless you enable **fail on unresolved issues** in the [Bugbot dashboard](https://cursor.com/docs/bugbot).
+- Odysseus-specific review rules live in [`.cursor/BUGBOT.md`](.cursor/BUGBOT.md).
+
+**Recommended review stack**
+
+- **CI** — deterministic merge gate (tests, syntax, secrets, Docker).
+- **Bugbot** — primary AI PR reviewer (bugs, security, Odysseus invariants).
+- **Thermos / thermo-nuclear skills** — optional pre-PR maintainability audit in Cursor for large changes.
+- **Human review** — product intent, UX, and operational sign-off.
+
+Do not enable multiple general AI PR reviewers (CodeRabbit, Cubic, Graphite AI, etc.) on the same repo while Bugbot is active — they duplicate comments without adding coverage CI and Bugbot already provide.
+
+Manual smoke (not on every PR): trigger the `docker-smoke` job via **Actions → Docker → Run workflow**.
+
+## Pull request guides
+
+- [Upstream PR guidelines](docs/guides/UPSTREAM_PR_GUIDELINES.md) — the five description checks, scaffold workflow, Cloud Agent video demos, fork vs upstream.
+- [CI parity report](docs/guides/CI_PARITY.md) — auto-generated comparison with `pewdiepie-archdaemon/odysseus` (run `bash scripts/ci-parity-report.sh` to refresh).
 
 ## Pull Requests
 
