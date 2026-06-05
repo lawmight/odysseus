@@ -31,7 +31,9 @@ These paths support **lawmight/odysseus** Cloud Agent workflows and fork CI. **E
 
 | Path | Purpose |
 |------|---------|
-| [docs/plans/README.md](../plans/README.md) | Shipped Cursor index (design archives in git history) |
+| [docs/cloud/UPSTREAM_CURSOR_BRANCH.md](../cloud/UPSTREAM_CURSOR_BRANCH.md) | Hourly upstream refresh runbook + Cursor Automation prompt |
+| [scripts/refresh-upstream-cursor-branch.sh](../../scripts/refresh-upstream-cursor-branch.sh) | Merge upstream into cursor branch only |
+| [scripts/carve-upstream-cursor-branch.sh](../../scripts/carve-upstream-cursor-branch.sh) | Rebuild cursor branch from manifest |
 
 ## Upstream cursor PR
 

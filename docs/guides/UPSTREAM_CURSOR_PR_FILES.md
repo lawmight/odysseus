@@ -119,7 +119,19 @@ git checkout "$SOURCE" -- \
 # README: merge Cursor section manually if upstream README diverged
 ```
 
-Or refresh the live staging branch: `git fetch origin cursor/upstream-cursor-provider-5b2d && git checkout cursor/upstream-cursor-provider-5b2d`.
+Or refresh the live staging branch:
+
+```bash
+bash scripts/refresh-upstream-cursor-branch.sh --target main
+```
+
+One-time rebuild (upstream base + manifest paths only):
+
+```bash
+bash scripts/carve-upstream-cursor-branch.sh --target main --source origin/main
+```
+
+See [docs/cloud/UPSTREAM_CURSOR_BRANCH.md](../cloud/UPSTREAM_CURSOR_BRANCH.md) and `.cursor/skills/upstream-cursor-branch/SKILL.md`.
 
 Resolve conflicts in `routes/*.py` and `tests/test_model_routes.py` by keeping upstream non-cursor behavior.
 
