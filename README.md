@@ -11,7 +11,7 @@
 A self-hosted AI workspace -- meant to be the self-hosted version of the UI experience you get from ChatGPT and Claude. But with more jank and fun. Running on your own hardware, with your own data -- local-first, privacy-first, and no trojan.
 
 ## Features
-  - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI · GitHub Copilot</sub>
+  - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI</sub>
   - **Agent** -- hand it tools and let it run the whole task itself.<br>　<sub>built on [opencode](https://github.com/anomalyco/opencode) · MCP · web · files · shell · skills · memory</sub>
   - **Cookbook** -- Scans your hardware, recommends models, click to download and serve.. easy!<br>　<sub>built on [llmfit](https://github.com/AlexsJones/llmfit) · VRAM-aware · GGUF / FP8 / AWQ · fit scoring · vLLM / llama.cpp serving</sub>
   - **Deep Research** -- multi-step runs that gather, read, and synthesize sources into a nice visual report.<br>　<sub>adapted from [Tongyi DeepResearch](https://github.com/Alibaba-NLP/DeepResearch)</sub>
@@ -64,8 +64,6 @@ cd odysseus
 cp .env.example .env       # optional, but recommended for explicit defaults
 docker compose up -d --build
 ```
-To include optional extras in the image (PDF viewer, Office extraction; includes AGPL PyMuPDF), build with `docker compose build --build-arg INSTALL_OPTIONAL=true` before `up`.
-
 Open `http://localhost:7000` when the containers are healthy. Docker Compose
 binds the web UI to `127.0.0.1` by default. If the port is taken, set
 `APP_PORT=7001` in `.env` and recreate the container. Set `APP_BIND=0.0.0.0`
@@ -394,7 +392,6 @@ Key settings:
 | `CHROMADB_HOST` | `localhost` | ChromaDB host for vector memory. Docker overrides this to `chromadb`. |
 | `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs. Docker overrides this to `8000`. |
 | `EMBEDDING_URL` | -- | OpenAI-compatible embeddings endpoint |
-| `CURSOR_ALLOWED_WORKSPACE_ROOTS` | current working directory | `:`-separated directories that Cursor local endpoints may use as bridge workspaces. |
 
 ### Built-in MCP servers (optional setup)
 
@@ -414,31 +411,22 @@ That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus
 |-----------------|------------|
 | Core install | Not included (`requirements.txt` only) |
 | Optional features | `requirements-optional.txt` |
-| Cursor Chat | `pip install -r requirements-cursor.txt` |
-| Cloud Agent VM | Auto when Cloud Agent env is detected, or set `ODYSSEUS_INSTALL_CURSOR=1` |
-| Docker Compose | Not in the default [`Dockerfile`](Dockerfile); add `RUN pip install -r requirements-cursor.txt` in a custom image if needed |
+| **Cursor Chat / Agent** | `pip install -r requirements-cursor.txt` on the machine running **uvicorn** |
+| Docker Compose (default image) | Not bundled — install SDK on the host or add `requirements-cursor.txt` in a custom image layer |
 
-Admins can add **Cursor (local)** in **Settings → Add Models → API** (the preset appears only after the SDK is installed). Install the optional SDK on the Odysseus host first:
+Admins can add **Cursor (local)** in **Settings → Add Models → API** after the SDK is installed on the Odysseus host:
 
 ```bash
 pip install -r requirements-cursor.txt
 ```
 
-Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat**.
+Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat** or **Agent**.
 
 Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** requires `cursor-sdk` and the bridge on the host where uvicorn runs.
 
-Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). Multi-turn Chat and Agent reuse a durable Cursor agent per Odysseus session; image attachments in Chat are forwarded via the SDK. Cursor Agent tool calls render as Agent tool cards, and Cursor `generateImage` results use the same `/api/generated-image/...` gallery path as Chat. Cursor Agent sessions omit the Odysseus `manage_skills` prompt index because Cursor cannot call Odysseus tools. **Compare**, **Deep Research**, utility/vision background tasks, and background-job auto-continue still skip Cursor endpoints. Cursor Agent MCP uses Cursor workspace/user config by default (for example `.cursor/mcp.json` in the workspace); admins can opt in to passing enabled Odysseus MCP DB rows to Cursor with `cursor_agent_mcp_from_db: true` in `data/settings.json` after reviewing the secret-sharing implications. Cloud Cursor agents remain a separate future plan.
+Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). **Compare**, **Deep Research**, and background-job auto-continue skip Cursor endpoints.
 
-#### SDK version sensitivity
-
-The integration depends on **[`cursor-sdk`](https://pypi.org/project/cursor-sdk/)** (currently pinned in [`requirements-cursor.txt`](requirements-cursor.txt)). The package and [Python SDK docs](https://cursor.com/docs/sdk/python) evolve quickly — tool events, `generateImage` payloads, and bridge behavior can change between releases.
-
-- **Before upgrading:** follow [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) (checklist + pytest subset).
-- **Manual smoke:** [`docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md`](docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md) (Chat + Agent checks before Plan B backlog work).
-- **Living spec:** [`docs/plans/cursor-sdk-capability-matrix.md`](docs/plans/cursor-sdk-capability-matrix.md) maps SDK capabilities to Odysseus code.
-- **Billing / dashboard:** local SDK usage is charged to **your** API key ([Integrations](https://cursor.com/dashboard/integrations)); it does **not** create rows on the [Cloud Agents](https://cursor.com/dashboard/cloud-agents) dashboard (that product is a separate cloud-runtime API).
-- **Production:** avoid unbounded `pip install -U cursor-sdk` without re-running the upgrade doc; Docker images should install the pinned `requirements-cursor.txt` and rebuild after pin changes.
+See [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) before bumping the pin in `requirements-cursor.txt`.
 
 ## Architecture
 ```
