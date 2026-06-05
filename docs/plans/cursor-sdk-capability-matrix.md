@@ -5,15 +5,7 @@
 **Odysseus branch:** `main` @ `0a70975`  
 **Purpose:** Inventory every major Cursor Python SDK capability and map it to what Odysseus implements today. Use this to scope Plan C+, Plan B, and avoid surprise gaps.
 
-**Nia sources used:**
-
-| ID | Resource |
-|----|----------|
-| `71741e4c-d188-415c-b114-0c6a5b656526` | [Cursor Python SDK](https://cursor.com/docs/sdk/python) |
-| `abe7140b-c0c5-4e3b-899c-04826a0d02a5` | [Cloud Agents REST API](https://cursor.com/docs/cloud-agent/api/endpoints) |
-| `5c39f490-db62-4a02-a6df-8db343f8b597` | `lawmight/odysseus` @ `main` (Nia repo index) |
-
-**Related plans:** [README](./README.md) · [Plan C+](./cursor-useful-tools-plan.md) · [Plan B](./cursor-agent-tab-integration-plan.md) · [Verification sheet](./CURSOR_INTEGRATION_VERIFICATION.md)
+**Related plans:** [README](./README.md) · [Plan C+](./cursor-useful-tools-plan.md) · [Plan B](./cursor-agent-tab-integration-plan.md)
 
 ---
 
@@ -277,7 +269,7 @@ python -m pytest -q
 Cursor-focused subset:
 
 ```bash
-pytest tests/test_cursor_adapter.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py \
+pytest tests/test_cursor_adapter.py tests/test_cursor_chat_tool_events.py \
        tests/test_cursor_agent.py tests/test_cursor_agent_skills.py tests/test_bg_monitor_cursor.py \
        tests/test_cursor_mcp_bridge.py tests/test_model_routes.py tests/test_cursor_admin_ui.py -q
 ```

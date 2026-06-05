@@ -1,4 +1,4 @@
-"""Plan B B3: optional Odysseus MCP DB -> Cursor SDK bridge."""
+"""Optional Odysseus MCP DB to Cursor SDK bridge."""
 
 import json
 from types import SimpleNamespace

@@ -1,4 +1,4 @@
-"""Plan B backlog B2c: bg_monitor must not run the native agent loop on Cursor sessions."""
+"""bg_monitor must not run the native agent loop on Cursor sessions."""
 
 import asyncio
 from types import SimpleNamespace

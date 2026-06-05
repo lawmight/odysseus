@@ -59,7 +59,7 @@ Frontend already supports reload: `static/js/chatRenderer.js` reads `metadata.to
 | File | Change |
 |------|--------|
 | `routes/chat_routes.py` | Collect events; pass to `save_assistant_response` |
-| `tests/test_cursor_plan_c_plus.py` or new `tests/test_cursor_chat_tool_events.py` | Mock stream → assert saved session metadata |
+| `tests/test_cursor_chat_tool_events.py` | Mock stream -> assert saved session metadata |
 
 ### Acceptance
 
@@ -112,7 +112,7 @@ One gallery write path; consistent `GalleryImage` fields (`size`, `quality`, `fi
 |-------|-----|
 | Cursor image gen | Still works (PR-1 + adapter) |
 | Built-in / MCP image gen | Same URLs and gallery rows |
-| pytest | `tests/test_cursor_plan_c_plus.py`, any gallery tests |
+| pytest | `tests/test_cursor_chat_tool_events.py`, any gallery tests |
 
 ### Risk
 
@@ -128,7 +128,7 @@ Lock behavior with real assertions; align docs; optional thin adapter.
 
 ### 5.1 Behavioral chat-route test
 
-Replace or supplement `inspect.getsource` tests in `test_cursor_plan_c_plus.py`:
+Replace or supplement `inspect.getsource` tests in `test_cursor_chat_tool_events.py`:
 
 - Drive `chat_stream` generator with a monkeypatched `stream_llm_with_fallback` that yields synthetic `tool_start` / `tool_output` chunks.
 - Assert yielded SSE includes `image_url`.
@@ -151,8 +151,8 @@ Replace or supplement `inspect.getsource` tests in `test_cursor_plan_c_plus.py`:
 
 | Check | How |
 |-------|-----|
-| No source-grep-only tests for critical paths | Grep `getsource` in cursor plan C tests |
-| `pytest tests/test_cursor_plan_c_plus.py tests/test_cursor_adapter.py -q` | Green |
+| No source-grep-only tests for critical paths | Grep `getsource` in Cursor chat tests |
+| `pytest tests/test_cursor_chat_tool_events.py tests/test_cursor_adapter.py -q` | Green |
 
 ---
 
@@ -176,7 +176,7 @@ Replace or supplement `inspect.getsource` tests in `test_cursor_plan_c_plus.py`:
 | Gallery | Row under `data/generated_images/` + `/api/generated-image/…` |
 | Agent + Cursor | Uses the Cursor engine (`stream_cursor_agent_loop`, Plan B Phase 1) — not blocked |
 | Builtin image shortcut | Unchanged |
-| pytest | `test_cursor_plan_c_plus.py`, `test_cursor_adapter.py`, new route test |
+| pytest | `test_cursor_chat_tool_events.py`, `test_cursor_adapter.py`, route test |
 
 ---
 

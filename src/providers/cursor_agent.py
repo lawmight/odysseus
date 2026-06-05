@@ -1,4 +1,4 @@
-"""Plan B: Cursor SDK engine for Odysseus Agent mode."""
+"""Cursor SDK engine for Odysseus Agent mode."""
 
 from __future__ import annotations
 
@@ -49,9 +49,8 @@ def cursor_agent_tool_call_chunks(
     """Map SDK tool_call events to Agent tab tool_start / tool_output SSE.
 
     When the workspace is known, ``generateImage`` is delegated to the shared
-    Chat mapper so the Agent thread gets a gallery image_url (Plan B backlog
-    B2a / decision D1), matching Chat behavior. All other tools map to generic
-    tool_start / tool_output cards.
+    Chat mapper so the Agent thread gets a gallery image_url, matching Chat
+    behavior. All other tools map to generic tool_start / tool_output cards.
     """
     name = str(_ca._get_attr(event, "name", "") or "")
     if not name:

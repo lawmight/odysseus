@@ -41,8 +41,6 @@ tests/test_cursor_agent.py
 tests/test_cursor_agent_skills.py
 tests/test_cursor_chat_tool_events.py
 tests/test_cursor_mcp_bridge.py
-tests/test_cursor_plan_c.py
-tests/test_cursor_plan_c_plus.py
 tests/test_model_routes.py   # cursor-related tests only if file is mixed
 ```
 
@@ -52,8 +50,6 @@ tests/test_model_routes.py   # cursor-related tests only if file is mixed
 README.md                           # "Cursor as a provider" section only
 ACKNOWLEDGMENTS.md                  # cursor-sdk row
 docs/CURSOR_SDK_UPGRADES.md
-docs/plans/CURSOR_INTEGRATION_VERIFICATION.md
-docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md
 ```
 
 Optional: subset of `docs/plans/cursor-*.md` if maintainers want design history.
@@ -81,11 +77,7 @@ git checkout "$SOURCE" -- \
   tests/test_cursor_agent_skills.py \
   tests/test_cursor_chat_tool_events.py \
   tests/test_cursor_mcp_bridge.py \
-  tests/test_cursor_plan_c.py \
-  tests/test_cursor_plan_c_plus.py \
   docs/CURSOR_SDK_UPGRADES.md \
-  docs/plans/CURSOR_INTEGRATION_VERIFICATION.md \
-  docs/plans/CURSOR_PRE_PLAN_B_SMOKE.md \
   ACKNOWLEDGMENTS.md
 
 # README: merge Cursor section manually if upstream README diverged
@@ -105,6 +97,7 @@ Resolve conflicts in `routes/*.py` and `tests/test_model_routes.py` by keeping u
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-cursor.txt
 pytest tests/test_cursor_adapter.py tests/test_model_routes.py \
-  tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py \
-  tests/test_cursor_admin_ui.py tests/test_cursor_agent.py -q
+  tests/test_cursor_chat_tool_events.py tests/test_cursor_admin_ui.py \
+  tests/test_cursor_agent.py tests/test_cursor_agent_skills.py \
+  tests/test_cursor_mcp_bridge.py -q
 ```

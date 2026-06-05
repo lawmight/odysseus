@@ -92,4 +92,4 @@ Branch from main.
 | Image gen in Chat | Cursor endpoint → prompt “generate a simple red circle PNG” → image bubble |
 | No path leak | Response URLs are under Odysseus uploads/gallery, not `file://` |
 | Mode guards | Compare/Research + Cursor → skipped; Agent + Cursor → streams via SDK |
-| Tests | `pytest tests/test_cursor_plan_c.py tests/test_cursor_adapter.py -q` + new tool tests |
+| Tests | `pytest tests/test_cursor_adapter.py tests/test_cursor_chat_tool_events.py -q` |

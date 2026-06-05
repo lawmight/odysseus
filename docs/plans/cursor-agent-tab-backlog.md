@@ -25,7 +25,7 @@ Ordered implementation epics that follow [Plan B v2](./cursor-agent-tab-integrat
 - [`src/providers/cursor_adapter.py`](../../src/providers/cursor_adapter.py) `cursor_tool_call_chunks` / `publish_cursor_generated_image` - reuse; keep bytes + gallery logic in the adapter (no layer bleed per [`.cursor/BUGBOT.md`](../../.cursor/BUGBOT.md)).
 - [`src/providers/cursor_agent.py`](../../src/providers/cursor_agent.py) `stream_cursor_agent_loop` - pass `workspace` / `model` / `session_id` / `owner` to the mapper.
 
-**Acceptance test:** extend [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py), mirroring the gallery assertions in [`tests/test_cursor_plan_c_plus.py`](../../tests/test_cursor_plan_c_plus.py) (image bytes -> `image_url` under `/api/generated-image/`). Matrix rows: `stream.tool_call`, `tool.generateImage`.
+**Acceptance test:** extend [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py), mirroring the gallery assertions in [`tests/test_cursor_chat_tool_events.py`](../../tests/test_cursor_chat_tool_events.py) (image bytes -> `image_url` under `/api/generated-image/`). Matrix rows: `stream.tool_call`, `tool.generateImage`.
 
 ---
 

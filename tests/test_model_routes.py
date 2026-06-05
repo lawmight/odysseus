@@ -649,8 +649,8 @@ def test_list_model_endpoints_includes_cursor_metadata(cursor_route_env):
     assert json.loads(response[0]["provider_config"])["cwd"] == workspace
 
 
-def test_list_model_endpoints_cursor_plan_c_objects_count_as_visible(cursor_route_env):
-    """Plan C stores {id, displayName} in cached_models; list must not show 0/0."""
+def test_list_model_endpoints_cursor_objects_count_as_visible(cursor_route_env):
+    """Cursor stores {id, displayName} in cached_models; list must not show 0/0."""
     rows, workspace = cursor_route_env
     entries = [
         {"id": "composer-2.5", "displayName": "Composer 2.5"},

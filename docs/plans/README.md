@@ -11,8 +11,6 @@
 | **C+ polish** | [cursor-plan-c-plus-polish.md](./cursor-plan-c-plus-polish.md) | **Shipped:** reload `tool_events`, gallery dedupe, stronger tests. |
 | **Matrix** | [cursor-sdk-capability-matrix.md](./cursor-sdk-capability-matrix.md) | SDK feature inventory vs Odysseus status (gaps, C+, B). |
 | **Upgrades** | [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md) | Pin policy, checklist, and regression hotspots when `cursor-sdk` changes. |
-| **Smoke** | [CURSOR_PRE_PLAN_B_SMOKE.md](./CURSOR_PRE_PLAN_B_SMOKE.md) | Manual Chat + Agent checks for Cursor integration tours. |
-| — | [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md) | API/SDK facts and handoff snippets (shared by A/B/C). |
 | **Ship #23** | [merged-pr-23-cursor-sdk-upgrades.md](./merged-pr-23-cursor-sdk-upgrades.md) | **Shipped** @ `7188279` ([#23](https://github.com/lawmight/odysseus/pull/23)): Cursor 0/0 model count fix + SDK upgrade docs. |
 
 ## Guides (PRs and CI)
@@ -22,7 +20,7 @@
 | [UPSTREAM_PR_GUIDELINES.md](../guides/UPSTREAM_PR_GUIDELINES.md) | How to pass upstream + fork review (template, preflight, Cloud Agent video demos). |
 | [CI_PARITY.md](../guides/CI_PARITY.md) | Fork vs `pewdiepie-archdaemon/odysseus` workflow parity (regenerate with `bash scripts/ci-parity-report.sh`). |
 
-**Implementation status (2026-06-04):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). **PR #23** added the Cursor endpoint list fix, [upgrade playbook](../CURSOR_SDK_UPGRADES.md), and [pre–Plan B smoke](./CURSOR_PRE_PLAN_B_SMOKE.md) on `main` @ `7188279`. Plan B follow-ups B2a-B3 are now implemented: Agent `generateImage` gallery parity, Cursor-agent skills-index suppression, background auto-continue guard, shared tool mapper helpers, and a disabled-by-default Odysseus MCP DB bridge (`cursor_agent_mcp_from_db`). B4 / Cloud Cursor agents remain a separate future plan.
+**Implementation status (2026-06-04):** Plan A/C Chat BYOK, Plan C+, and **Plan B Phase 1** (Cursor Agent engine) **shipped on `main`** ([#17](https://github.com/lawmight/odysseus/pull/17)). **PR #23** added the Cursor endpoint list fix and [upgrade playbook](../CURSOR_SDK_UPGRADES.md) on `main` @ `7188279`. Plan B follow-ups B2a-B3 are now implemented: Agent `generateImage` gallery parity, Cursor-agent skills-index suppression, background auto-continue guard, shared tool mapper helpers, and a disabled-by-default Odysseus MCP DB bridge (`cursor_agent_mcp_from_db`). B4 / Cloud Cursor agents remain a separate future plan.
 
 ---
 

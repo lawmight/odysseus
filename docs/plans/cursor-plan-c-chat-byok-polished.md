@@ -2,7 +2,7 @@
 
 **Status:** Shipped on `main` @ `3a1b985` (PR #2, 2026-06-02)  
 **Target repo:** Odysseus (self-hosted AI workspace)  
-**Related:** Plan A (adapter design), Plan B Phase 1 (Agent tab — [shipped](./README.md)), Plan C+ ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md)), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)  
+**Related:** Plan A (adapter design), Plan B Phase 1 (Agent tab — [shipped](./README.md)), Plan C+ ([cursor-useful-tools-plan.md](./cursor-useful-tools-plan.md))  
 **Implementation reference:** merged via PR #2 → `main` (`3a1b985`)
 
 ---
@@ -193,7 +193,7 @@ Complete Plan C first, especially:
 
 | Topic | Detail | Source |
 |-------|--------|--------|
-| Package | `cursor-sdk>=0.1.6` | PyPI + [verification sheet](./CURSOR_INTEGRATION_VERIFICATION.md) |
+| Package | `cursor-sdk>=0.1.6` | PyPI + [`requirements-cursor.txt`](../../requirements-cursor.txt) |
 | Images | `UserMessage`, `SDKImage.from_file`, dict `images[]` | [python.md — images](https://cursor.com/docs/sdk/python#sdkimage) |
 | Context | Same `Agent`, multiple `send()` calls | [python.md — Sending messages](https://cursor.com/docs/sdk/python) |
 | Resume | `Agent.resume(agent_id)` | [python.md — Resuming agents](https://cursor.com/docs/sdk/python) |

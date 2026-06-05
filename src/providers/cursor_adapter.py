@@ -58,7 +58,7 @@ _DATA_URL_RE = re.compile(
     re.DOTALL,
 )
 
-# Plan C+: allowlisted Cursor-native tools surfaced in Chat mode (not Agent tab).
+# Allowlisted Cursor-native tools surfaced in Chat mode.
 CURSOR_CHAT_TOOL_ALLOWLIST = frozenset({"generateImage"})
 _CURSOR_TOOL_UI_NAME = {"generateImage": "generate_image"}
 _IMAGE_PATH_KEYS = (
@@ -199,7 +199,7 @@ def list_cursor_models(api_key: str | None, timeout: float = 5.0) -> List[str]:
 
 
 def normalize_cached_cursor_models(raw: Any) -> List[Dict[str, str]]:
-    """Accept legacy string lists or Plan C {id, displayName} objects."""
+    """Accept legacy string lists or Cursor {id, displayName} objects."""
     if not raw:
         return []
     if isinstance(raw, str):

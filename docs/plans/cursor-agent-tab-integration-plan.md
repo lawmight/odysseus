@@ -2,7 +2,7 @@
 
 **Status:** **Phase 1 plus B2a-B3 follow-ups shipped**; Cloud Cursor agents remain out of scope for Odysseus v1.
 **Target repo:** Odysseus
-**Reconciled against:** `main` @ `2a0e5de` (2026-06-04), [`cursor-sdk-capability-matrix.md`](./cursor-sdk-capability-matrix.md), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
+**Reconciled against:** `main` @ `2a0e5de` (2026-06-04), [`cursor-sdk-capability-matrix.md`](./cursor-sdk-capability-matrix.md)
 
 > This is the **second pass**. The original Plan B was written before Plan A/C/C+ and before Phase 1 existed, so several "future" phases were either already solved by shared adapter work or need a different framing. The capability matrix is the machine-readable gap list; this doc is the human roadmap and decision log.
 
@@ -87,7 +87,7 @@ These were never closed and are **QA, not research**:
 - [ ] Rapid double-send handled gracefully (no `agent_busy` crash).
 - [ ] Compare / Research / incognito do not invoke the Cursor engine.
 
-Automated coverage today: [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py) (mapper + heartbeat + Agent `generateImage` gallery), [`tests/test_cursor_agent_skills.py`](../../tests/test_cursor_agent_skills.py), [`tests/test_bg_monitor_cursor.py`](../../tests/test_bg_monitor_cursor.py), [`tests/test_cursor_mcp_bridge.py`](../../tests/test_cursor_mcp_bridge.py), and the routing regression in [`tests/test_cursor_plan_c_plus.py`](../../tests/test_cursor_plan_c_plus.py) (`test_chat_routes_uses_cursor_agent_loop_in_agent_mode`).
+Automated coverage today: [`tests/test_cursor_agent.py`](../../tests/test_cursor_agent.py) (mapper + heartbeat + Agent `generateImage` gallery + routing), [`tests/test_cursor_agent_skills.py`](../../tests/test_cursor_agent_skills.py), [`tests/test_bg_monitor_cursor.py`](../../tests/test_bg_monitor_cursor.py), and [`tests/test_cursor_mcp_bridge.py`](../../tests/test_cursor_mcp_bridge.py).
 
 ---
 
@@ -164,8 +164,8 @@ Cursor must not leak into these paths; they call the LLM separately and have no 
 Automated (run after any Plan B change):
 
 ```bash
-pytest tests/test_cursor_agent.py tests/test_cursor_plan_c_plus.py \
-       tests/test_cursor_adapter.py tests/test_cursor_plan_c.py -q
+pytest tests/test_cursor_agent.py tests/test_cursor_chat_tool_events.py \
+       tests/test_cursor_adapter.py -q
 ```
 
 Manual desk QA: Section 4.2 checklist (needs a real `CURSOR_API_KEY` and the SDK bridge on the Odysseus host).

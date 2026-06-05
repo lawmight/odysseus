@@ -906,7 +906,7 @@ def setup_chat_routes(
                                         _stream_set(session, partial=full_response)
                                     yield chunk
                                 elif data.get("type") in ("tool_start", "tool_output"):
-                                    # Cursor Plan C+: generateImage tool SSE (chat.js renders image_url).
+                                    # Cursor generateImage tool SSE. chat.js renders image_url.
                                     if data.get("type") == "tool_output":
                                         _tev = tool_event_from_chat_tool_output(data)
                                         if _tev:
@@ -1004,7 +1004,7 @@ def setup_chat_routes(
                 finally:
                     _active_streams.pop(session, None)
             else:
-                # ── Agent mode: native loop or Cursor SDK engine (Plan B) ──
+                # Agent mode: native loop or Cursor SDK engine.
                 _agent_rounds = 0
                 _agent_tool_calls = 0
                 _agent_tool_events: List[dict] = []

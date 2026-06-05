@@ -20,15 +20,15 @@ Fixes Cursor model endpoints showing **0/0** in Settings when Plan C caches `{id
 | Area | Detail |
 |------|--------|
 | **Bug fix** | `routes/model_routes.py` — pass string model IDs into `_visible_models` for Cursor list / create-duplicate / default-chat paths |
-| **Tests** | `test_list_model_endpoints_cursor_plan_c_objects_count_as_visible` |
-| **Docs** | [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md), [CURSOR_PRE_PLAN_B_SMOKE.md](./CURSOR_PRE_PLAN_B_SMOKE.md); README / AGENTS / matrix cross-links |
+| **Tests** | `test_list_model_endpoints_cursor_objects_count_as_visible` |
+| **Docs** | [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md); README / AGENTS / matrix cross-links |
 | **Deps** | `requirements-cursor.txt`, `requirements-optional.txt` |
 
 ## How to verify
 
-1. `source venv/bin/activate && python -m pytest tests/test_model_routes.py::test_list_model_endpoints_cursor_plan_c_objects_count_as_visible -q`
+1. `source venv/bin/activate && python -m pytest tests/test_model_routes.py::test_list_model_endpoints_cursor_objects_count_as_visible -q`
 2. In Settings, open a Cursor endpoint with Plan C `{id, displayName}` cache entries; confirm the row shows the correct model count (not `0/0`).
-3. Follow [CURSOR_PRE_PLAN_B_SMOKE.md](./CURSOR_PRE_PLAN_B_SMOKE.md) before Plan B backlog work; use [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md) when bumping `cursor-sdk`.
+3. Use [CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md) when bumping `cursor-sdk`.
 
 ## UI
 

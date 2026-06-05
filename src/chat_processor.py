@@ -309,8 +309,7 @@ class ChatProcessor:
         # context retention this turn). In plain chat mode the model can't
         # call the tool anyway, so the index would be noise.
         # Cursor agent sessions run the Cursor engine, which cannot call the
-        # Odysseus `manage_skills` tool — so the skills index is misleading
-        # noise there. Skip it for Cursor endpoints (Plan B backlog B2b / D4).
+        # Odysseus `manage_skills` tool, so the skills index is misleading.
         _is_cursor_agent = False
         if agent_mode:
             try:
