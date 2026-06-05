@@ -1530,8 +1530,8 @@ def setup_model_routes(model_discovery):
                     return m.get("id") if isinstance(m, dict) else str(m)
 
                 pinned = _normalize_model_ids(getattr(r, "pinned_models", None))
-                # Cursor caches Plan C {id, displayName} objects; _visible_models
-                # only understands string IDs (same as the create response).
+                # Cursor caches {id, displayName} objects; _visible_models only
+                # understands string IDs (same as the create response).
                 visibility_src = (
                     cached_model_ids(raw) if prov == "cursor" and raw is not None else all_models
                 )

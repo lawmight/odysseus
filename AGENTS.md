@@ -265,7 +265,7 @@ python -m pytest -q
 CI on every PR to `main` runs the full suite (see [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration)). For Cursor-only iteration:
 
 ```bash
-pytest tests/test_cursor_adapter.py tests/test_model_routes.py tests/test_cursor_plan_c.py tests/test_cursor_plan_c_plus.py -q
+pytest tests/test_cursor_adapter.py tests/test_model_routes.py tests/test_cursor_chat_tool_events.py tests/test_cursor_agent.py -q
 ```
 
 Optional JS-related tests: `pytest tests/test_compare_js.py` (needs Node). Bombadil E2E: see `tests/bombadil-spec.ts` and `npm install`.

@@ -1,4 +1,4 @@
-"""Plan B backlog B2b: Cursor agent sessions omit the manage_skills index."""
+"""Cursor agent sessions omit the manage_skills index."""
 
 from types import SimpleNamespace
 

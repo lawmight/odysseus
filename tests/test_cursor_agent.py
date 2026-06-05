@@ -58,7 +58,7 @@ def test_cursor_agent_generate_image_without_workspace_is_generic():
 
 
 def test_cursor_agent_generate_image_publishes_gallery_url(tmp_path, monkeypatch):
-    """With a workspace, generateImage is delegated to the shared gallery path (B2a)."""
+    """With a workspace, generateImage uses the shared gallery path."""
     monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
     img = tmp_path / "gen.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -90,3 +90,12 @@ def test_heartbeat_interval_sec_non_positive_env(monkeypatch):
     assert ca._heartbeat_interval_sec() == 15.0
     monkeypatch.setenv("CURSOR_STREAM_HEARTBEAT_SEC", "-1")
     assert ca._heartbeat_interval_sec() == 15.0
+
+
+def test_chat_routes_uses_cursor_agent_loop_in_agent_mode():
+    import inspect
+
+    import routes.chat_routes as chat_routes
+
+    source = inspect.getsource(chat_routes.setup_chat_routes)
+    assert "stream_cursor_agent_loop" in source

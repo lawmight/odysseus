@@ -2,7 +2,7 @@
 
 **Status:** **Historical** — Plan A/C, Plan C+, and Plan B Phase 1 are shipped on `main`. Remote `cursor/*` branches were pruned; **`main` is the only integration line.**  
 **Date:** 2026-06-02 (updated 2026-06-03)  
-**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (Phase 2–4 next), [CURSOR_INTEGRATION_VERIFICATION.md](./CURSOR_INTEGRATION_VERIFICATION.md)
+**Related:** Plan A/C ([cursor-plan-c-chat-byok-polished.md](./cursor-plan-c-chat-byok-polished.md)), [Plan B](./cursor-agent-tab-integration-plan.md) (Phase 2–4 next)
 
 **Next work:** see the [Plan B v2 reframe](./cursor-agent-tab-integration-plan.md) and [backlog](./cursor-agent-tab-backlog.md). PR #2 / #8 branch map below is archival only.
 
@@ -120,7 +120,7 @@ Merge when green; then PR #2 → `main` as today.
 
 | Check | Command / note |
 |-------|----------------|
-| Tests | `pytest tests/test_cursor_plan_c.py tests/test_cursor_adapter.py tests/test_model_routes.py -q` |
+| Tests | `pytest tests/test_cursor_adapter.py tests/test_cursor_chat_tool_events.py tests/test_model_routes.py -q` |
 | Full suite | `pytest` (or CI) |
 | Manual smoke | Cursor endpoint → chat → follow-up → attach image → model switch |
 | Agent guard | Agent mode + Cursor endpoint → clear error (not silent failure) |

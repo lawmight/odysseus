@@ -90,7 +90,7 @@ async def _run_followup(rec: dict) -> bool:
     # Cursor-backed sessions run the Cursor agent engine, not the native loop.
     # _drain_agent below uses stream_agent_loop, which can't drive a cursor://
     # endpoint, so skip auto-continue here rather than run the wrong engine.
-    # Consider it handled so we don't retry forever. (Plan B backlog B2c.)
+    # Consider it handled so we don't retry forever.
     from src.llm_core import _detect_provider
     if _detect_provider(getattr(sess, "endpoint_url", "") or "") == "cursor":
         logger.info(

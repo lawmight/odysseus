@@ -405,6 +405,17 @@ npx -y @playwright/mcp@latest --version
 
 That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
 
+### GitHub Copilot as a provider
+
+Admins can connect **GitHub Copilot** from **Settings -> Add Models -> API**
+or by running `/setup copilot` in chat. Odysseus starts GitHub's device-flow
+login, provisions a model endpoint, and stores the token in the local database
+with the rest of your provider credentials.
+
+Copilot endpoints use GitHub's OpenAI-compatible API and work anywhere Odysseus
+uses regular chat/model endpoints. Availability and billing follow the signed-in
+GitHub account.
+
 ### Cursor as a provider (Chat + Agent)
 
 | Install context | Cursor SDK |
