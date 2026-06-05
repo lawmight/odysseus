@@ -4,8 +4,6 @@ Odysseus integrates with **`cursor-sdk`** (local bridge + agent streaming). The 
 
 **Current pin:** see [`requirements-cursor.txt`](../requirements-cursor.txt).
 
-**Living spec:** [`docs/plans/cursor-sdk-capability-matrix.md`](plans/cursor-sdk-capability-matrix.md). Update status rows after each verified upgrade.
-
 **Official docs:** [Cursor Python SDK](https://cursor.com/docs/sdk/python) · [Integrations / API keys](https://cursor.com/dashboard/integrations)
 
 ---
@@ -26,7 +24,7 @@ pip index versions cursor-sdk
 
 ## Upgrade checklist
 
-1. **Note versions** — record old and new `cursor-sdk` in the matrix header (date + version).
+1. **Note versions** — record old and new `cursor-sdk` in the commit message or PR summary.
 2. **Read upstream** — skim Cursor SDK / changelog for `tool_call`, `generateImage`, `UserMessage` / `SDKImage`, bridge, and `agents.resume` changes.
 3. **Install in dev** — `pip install -r requirements-cursor.txt` (or the new pin) in `venv`; confirm import: `python -c "import cursor_sdk; print('ok')"`.
 4. **Automated tests** — from repo root with venv active:
@@ -38,8 +36,7 @@ pip index versions cursor-sdk
    ```
 5. **Manual smoke (Chat)** — use the README Cursor setup and send one prompt through a Cursor endpoint.
 6. **Manual smoke (Agent)** — one Agent-mode prompt on a Cursor endpoint; confirm `tool_start` / `tool_output` cards (not native bash loop).
-7. **Update docs** — matrix maintenance section if the pin changed.
-8. **Commit** — pin + matrix header + any code fixes in one focused PR.
+7. **Commit** — pin plus any code fixes in one focused PR.
 
 ---
 
@@ -57,4 +54,4 @@ Loose pins let fresh VMs silently pick up breaking SDK releases. Prefer bumping 
 
 ## Not in scope for SDK upgrades
 
-- **Cursor Cloud Agents** (dashboard jobs, repos, PRs) — separate API; Odysseus v1 uses **local bridge only** (`cursor://local`). See [`cursor-sdk-capability-matrix.md`](plans/cursor-sdk-capability-matrix.md) rows `runtime.cloud_*` and `cloud.*`.
+- **Cursor Cloud Agents** (dashboard jobs, repos, PRs) — separate API; Odysseus v1 uses **local bridge only** (`cursor://local`).
