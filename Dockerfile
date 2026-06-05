@@ -25,9 +25,11 @@ WORKDIR /app
 # Install Python deps first (layer cache). Optional extras (PyMuPDF AGPL, etc.)
 # are opt-in so the default image stays MIT-core; see requirements-optional.txt.
 ARG INSTALL_OPTIONAL=false
-COPY requirements.txt requirements-optional.txt ./
+ARG INSTALL_CURSOR=false
+COPY requirements.txt requirements-optional.txt requirements-cursor.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
-    && if [ "$INSTALL_OPTIONAL" = "true" ]; then pip install --no-cache-dir -r requirements-optional.txt; fi
+    && if [ "$INSTALL_OPTIONAL" = "true" ]; then pip install --no-cache-dir -r requirements-optional.txt; fi \
+    && if [ "$INSTALL_CURSOR" = "true" ]; then pip install --no-cache-dir -r requirements-cursor.txt; fi
 
 # Copy app code
 COPY . .

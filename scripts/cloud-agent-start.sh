@@ -10,6 +10,20 @@ RUNTIME="${RUNTIME,,}"
 
 DOCKER="docker"
 
+_truthy() {
+  case "${1:-}" in 1|true|TRUE|yes|YES|on|ON) return 0 ;; *) return 1 ;; esac
+}
+
+_should_install_cursor() {
+  if _truthy "${ODYSSEUS_INSTALL_CURSOR:-}"; then
+    return 0
+  fi
+  if [[ -n "${CLOUD_AGENT_ALL_SECRET_NAMES:-}" ]] || [[ -n "${CURSOR_API_KEY:-}" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 _detect_docker() {
   DOCKER="docker"
   if ! docker info >/dev/null 2>&1; then
@@ -37,6 +51,13 @@ _cmd_start_docker() {
   if ! $DOCKER info >/dev/null 2>&1; then
     echo "Docker unavailable — set ODYSSEUS_RUNTIME=dev for host uvicorn without sidecars." >&2
     exit 1
+  fi
+  if _should_install_cursor; then
+    export INSTALL_CURSOR=true
+    if ! _truthy "${ODYSSEUS_DOCKER_BUILD:-}"; then
+      export ODYSSEUS_DOCKER_BUILD=1
+      echo "cloud-agent-start: INSTALL_CURSOR=true (Cloud Agent / ODYSSEUS_INSTALL_CURSOR); rebuilding image once"
+    fi
   fi
   _compose_args=(compose up -d)
   if [[ "${ODYSSEUS_DOCKER_BUILD:-}" =~ ^(1|true|yes|on)$ ]]; then
