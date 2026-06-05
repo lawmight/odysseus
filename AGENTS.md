@@ -245,7 +245,7 @@ No project-wide linter is configured.
 
 ### Pull requests (before `gh pr create` or ManagePullRequest)
 
-The **Check PR description** workflow enforces five rules (Summary, Linked Issue, Type of Change, checklist, How to Test). See [docs/guides/UPSTREAM_PR_GUIDELINES.md](docs/guides/UPSTREAM_PR_GUIDELINES.md#the-five-checks).
+Read [`.cursor/skills/fork-pr-ci/SKILL.md`](.cursor/skills/fork-pr-ci/SKILL.md) and run the scaffold workflow. The **Check PR description** workflow enforces five rules (Summary, Linked Issue, Type of Change, checklist, How to Test). See [docs/guides/UPSTREAM_PR_GUIDELINES.md](docs/guides/UPSTREAM_PR_GUIDELINES.md#the-five-checks).
 
 ```bash
 bash scripts/scaffold-pr-body.sh --issue NNNN --summary "What changed and why (20+ chars)." -o pr-body.md
