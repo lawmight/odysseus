@@ -27,10 +27,6 @@ DIRS = [
 ]
 
 
-def _truthy_env(name: str) -> bool:
-    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def create_dirs():
     for d in DIRS:
         os.makedirs(d, exist_ok=True)
@@ -118,13 +114,9 @@ def create_default_admin():
             print(f"  [ok] Admin account created ({username})")
         else:
             print(f"  [ok] Initial admin user created ({username})")
-            password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
-            hide_password = bool(password_env) or _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG")
-            if hide_password and password_file:
-                print(f"        Temporary password saved at: {password_file}")
-            elif hide_password:
+            if password_env:
                 print("        Temporary password set via ODYSSEUS_ADMIN_PASSWORD (value not printed)")
-            elif not password_env:
+            else:
                 print(f"        Temporary password: {password}")
             print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
         return "created"
@@ -181,13 +173,8 @@ def check_deps():
 
 
 def admin_password_hint():
-    password_file = (os.getenv("ODYSSEUS_ADMIN_PASSWORD_FILE") or "").strip()
-    if password_file:
-        return f"Login with the admin username and the temporary password saved at {password_file}."
     if os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
         return "Login with the admin username and your ODYSSEUS_ADMIN_PASSWORD value."
-    if _truthy_env("ODYSSEUS_SUPPRESS_ADMIN_PASSWORD_LOG"):
-        return "Login with the admin username and the temporary password generated during setup."
     return "Login with the admin username and temporary password printed above."
 
 

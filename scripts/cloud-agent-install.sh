@@ -96,21 +96,6 @@ fi
 
 # First-time data dir (no-op if auth.json already exists)
 if [[ ! -f data/auth.json ]]; then
-  if [[ -z "${ODYSSEUS_ADMIN_PASSWORD:-}" ]]; then
-    if command -v openssl >/dev/null 2>&1; then
-      _pw_suffix="$(openssl rand -hex 16)"
-    else
-      _pw_suffix="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
-    fi
-    export ODYSSEUS_ADMIN_PASSWORD="odysseus-${_pw_suffix}"
-    unset _pw_suffix
-    export ODYSSEUS_ADMIN_PASSWORD_FILE="data/admin-password.txt"
-    install -d -m 700 data
-    (umask 077 && printf '%s\n' "$ODYSSEUS_ADMIN_PASSWORD" > "$ODYSSEUS_ADMIN_PASSWORD_FILE")
-    echo "cloud-agent-install: created admin password at $ODYSSEUS_ADMIN_PASSWORD_FILE (value not logged)"
-  else
-    echo "cloud-agent-install: using ODYSSEUS_ADMIN_PASSWORD from environment (value not logged)"
-  fi
   python setup.py
 fi
 
