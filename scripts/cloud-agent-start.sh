@@ -66,7 +66,16 @@ _cmd_start_docker() {
   else
     echo "cloud-agent-start: docker compose up -d (set ODYSSEUS_DOCKER_BUILD=1 to rebuild images)"
   fi
-  $DOCKER "${_compose_args[@]}"
+  if [[ "$DOCKER" == "sudo docker" ]]; then
+    # sudo drops exported vars; pass build-time args explicitly for compose substitution.
+    if [[ -n "${INSTALL_CURSOR:-}" ]]; then
+      sudo env INSTALL_CURSOR="$INSTALL_CURSOR" docker compose "${_compose_args[@]}"
+    else
+      sudo docker compose "${_compose_args[@]}"
+    fi
+  else
+    $DOCKER compose "${_compose_args[@]}"
+  fi
 }
 
 _cmd_start_dev() {
