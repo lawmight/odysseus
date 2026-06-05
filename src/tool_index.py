@@ -30,22 +30,14 @@ ALWAYS_AVAILABLE = frozenset({
     "read_file", "write_file", "edit_file",
     "grep", "glob", "ls",  # code-navigation tools (admin-gated by tool_security)
     "api_call",  # For configured integrations (Miniflux, Gitea, Linkding, etc.)
-    # The two genuinely AMBIENT cookbook tools — "what's running" and
-    # "kill it" can be asked any time without prior cookbook context,
-    # and need to survive typos. The other cookbook tools (downloads,
-    # presets, serve, cached, servers) are CONTEXTUAL — they fire via
-    # keyword hints when the user is actually talking about cookbook.
-    # Keeping the always-on set small leaves room in the ~16-tool
-    # budget for manage_tasks / manage_calendar / etc.
+    # The three genuinely AMBIENT cookbook tools — "what's running",
+    # "kill it", and tailing serve output can be asked any time without
+    # prior cookbook context, and need to survive typos. The other
+    # cookbook tools (downloads, presets, serve, cached, servers) are
+    # CONTEXTUAL — they fire via keyword hints when the user is actually
+    # talking about cookbook. Keeping the always-on set small leaves room
+    # in the ~16-tool budget for manage_tasks / manage_calendar / etc.
     "list_served_models", "stop_served_model", "tail_serve_output",
-    # Serving is a core agent capability — keep these always available so
-    # the router doesn't lose them on phrasings like "servic" / "fire up" / "boot".
-    "serve_model", "serve_preset", "list_serve_presets",
-    "list_cached_models", "list_cookbook_servers",
-    # Fallback when serve_model's allowlist rejects a cmd or when the
-    # model was launched out-of-band via bash+tmux — without this the
-    # session is invisible to the cookbook UI even though it's running.
-    "adopt_served_model",
     # Generic API loopback — the catch-all when no named tool fits.
     "app_api",
 })
