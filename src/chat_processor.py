@@ -308,7 +308,18 @@ class ChatProcessor:
         # never in incognito mode (the user has explicitly opted out of
         # context retention this turn). In plain chat mode the model can't
         # call the tool anyway, so the index would be noise.
-        if agent_mode and not incognito and use_skills and self.skills_manager:
+        # Cursor agent sessions run the Cursor engine, which cannot call the
+        # Odysseus `manage_skills` tool, so the skills index is misleading.
+        _is_cursor_agent = False
+        if agent_mode:
+            try:
+                from src.llm_core import _detect_provider
+                _is_cursor_agent = (
+                    _detect_provider(getattr(session, "endpoint_url", "") or "") == "cursor"
+                )
+            except Exception:
+                _is_cursor_agent = False
+        if agent_mode and not incognito and use_skills and self.skills_manager and not _is_cursor_agent:
             try:
                 idx = self.skills_manager.index_for(owner=owner)
             except Exception as e:

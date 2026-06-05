@@ -12,6 +12,10 @@ let modalEl = null;
 // the endpoints list can flash a glow on that row. Cleared once the
 // animation fires.
 let _recentlyAddedEpId = null;
+let _endpointMeta = {
+  cursor_sdk_available: true,
+  cursor_install_hint: '',
+};
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s); }
@@ -405,7 +409,9 @@ async function loadEndpoints() {
       // empty, but we still need to render the expand panel so the user can
       // un-hide them. Gate on the total instead.
       const hasModels = ep.online && totalCount > 0;
-      const statusBadge = ep.status === 'empty'
+      const statusBadge = ep.status === 'sdk_missing'
+        ? '<span class="admin-badge admin-badge-off">chat disabled — install SDK</span>'
+        : ep.status === 'empty'
         ? '<span class="admin-badge">no models</span>'
         : ep.online
           ? `<span class="admin-badge">${visibleCount}/${totalCount} models enabled</span>`
@@ -674,7 +680,40 @@ async function _saveEpModelState(epId, panel) {
 function initEndpointForm() {
   const provider = el('adm-epProvider');
   const urlInput = el('adm-epUrl');
+  const cursorRow = el('adm-epCursorRow');
+  const cursorHelp = el('adm-epCursorHelp');
+  const cursorCwd = el('adm-epCursorCwd');
+  const cursorInstallHint = el('adm-epCursorInstallHint');
   const kindSel = el('adm-epKind');
+
+  function _updateCursorInstallHint() {
+    if (!cursorInstallHint) return;
+    if (!_endpointMeta.cursor_sdk_available && _endpointMeta.cursor_install_hint) {
+      cursorInstallHint.textContent = _endpointMeta.cursor_install_hint;
+      cursorInstallHint.classList.remove('hidden');
+    } else {
+      cursorInstallHint.textContent = '';
+      cursorInstallHint.classList.add('hidden');
+    }
+  }
+
+  async function _refreshEndpointMeta() {
+    try {
+      const res = await fetch('/api/model-endpoints?include_meta=1', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (payload && payload.meta) {
+        _endpointMeta = payload.meta;
+        _updateCursorInstallHint();
+        _renderPickerMenu();
+        if (provider.value === 'cursor://local' && !_endpointMeta.cursor_sdk_available) {
+          provider.value = '';
+          provider.dispatchEvent(new Event('change', { bubbles: true }));
+          _syncPickerCurrent();
+        }
+      }
+    } catch (_) { /* silent */ }
+  }
 
   // Custom provider picker — mirrors the (now hidden) <select id="adm-epProvider">
   // so the rest of this function (which reads provider.value and dispatches
@@ -685,7 +724,9 @@ function initEndpointForm() {
   const pickerCurrent = picker ? picker.querySelector('.adm-provider-current') : null;
   function _renderPickerMenu() {
     if (!pickerMenu) return;
-    pickerMenu.innerHTML = Array.from(provider.options).map(o => {
+    pickerMenu.innerHTML = Array.from(provider.options)
+      .filter(o => o.value !== 'cursor://local' || _endpointMeta.cursor_sdk_available)
+      .map(o => {
       const logo = o.dataset.logo ? (providerLogo(o.dataset.logo) || '') : '';
       const active = o.value === provider.value ? ' active' : '';
       return `<div class="adm-provider-item${active}" role="option" data-value="${o.value.replace(/"/g, '&quot;')}">
@@ -724,9 +765,19 @@ function initEndpointForm() {
   }
 
   provider.addEventListener('change', () => {
+    const isCursor = provider.value === 'cursor://local';
     if (provider.value) urlInput.value = provider.value;
     else urlInput.value = '';
-    if (kindSel) kindSel.value = provider.value ? 'api' : 'proxy';
+    if (cursorRow) cursorRow.classList.toggle('hidden', !isCursor);
+    if (cursorHelp) cursorHelp.classList.toggle('hidden', !isCursor);
+    if (isCursor) {
+      urlInput.style.display = 'none';
+      const epType = el('adm-epType');
+      if (epType) epType.value = 'llm';
+    } else {
+      urlInput.style.display = '';
+      if (kindSel) kindSel.value = provider.value ? 'api' : 'proxy';
+    }
   });
   urlInput.addEventListener('input', () => {
     if (provider.value && urlInput.value.trim() !== provider.value) {
@@ -865,8 +916,10 @@ function initEndpointForm() {
     msg.textContent = ''; msg.className = '';
     const rawUrl = (urlInput.value || provider.value).trim();
     const apiKey = el('adm-epApiKey').value.trim();
+    const isCursor = rawUrl === 'cursor://local';
     if (!rawUrl) { msg.textContent = 'Select a provider or enter a base URL'; msg.className = 'admin-error'; return; }
-    if (provider.value && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (provider.value && !isCursor && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (isCursor && !apiKey) { msg.textContent = 'Cursor API key is required'; msg.className = 'admin-error'; return; }
     // Normalize URL (fix typos, add /v1, strip wrong paths)
     const url = provider.value && rawUrl === provider.value ? rawUrl : _normalizeBaseUrl(rawUrl);
     const btn = el('adm-epAddBtn');
@@ -879,7 +932,10 @@ function initEndpointForm() {
       fd.append('model_refresh_mode', endpointKind === 'proxy' ? 'manual' : 'auto');
       fd.append('model_refresh_timeout', '30');
       if (apiKey) fd.append('api_key', apiKey);
-      if (provider.value && provider.selectedOptions && provider.selectedOptions[0]) {
+      if (provider.value === 'cursor://local') {
+        fd.append('provider', 'cursor');
+        if (cursorCwd && cursorCwd.value.trim()) fd.append('cursor_cwd', cursorCwd.value.trim());
+      } else if (provider.value && provider.selectedOptions && provider.selectedOptions[0]) {
         fd.append('name', provider.selectedOptions[0].textContent.trim());
       }
       const epType = el('adm-epType');
@@ -892,6 +948,8 @@ function initEndpointForm() {
         const count = d.models ? d.models.length : 0;
         urlInput.value = ''; urlInput.style.display = '';
         el('adm-epApiKey').value = ''; provider.value = '';
+        if (cursorCwd) cursorCwd.value = '';
+        if (cursorRow) cursorRow.classList.add('hidden');
         if (kindSel) kindSel.value = 'proxy';
         if (epType) epType.value = 'llm';
         if (d.id) _recentlyAddedEpId = String(d.id);
@@ -911,6 +969,78 @@ function initEndpointForm() {
     } catch (e) { msg.textContent = 'Request failed'; msg.className = 'admin-error'; }
     btn.disabled = false; btn.textContent = 'Add';
   });
+
+  // GitHub Copilot — device-flow login. Starts the flow, shows the user a
+  // code + verification link, and polls until they authorise (or it expires).
+  const copilotBtn = el('adm-copilotConnectBtn');
+  if (copilotBtn) {
+    let copilotPolling = false;
+    copilotBtn.addEventListener('click', async () => {
+      if (copilotPolling) return;
+      const status = el('adm-copilotStatus');
+      const reset = () => { copilotBtn.disabled = false; copilotBtn.textContent = 'Connect GitHub Copilot'; copilotPolling = false; };
+      status.textContent = ''; status.className = 'adm-ep-inline-msg';
+      copilotBtn.disabled = true; copilotBtn.textContent = 'Starting...';
+      copilotPolling = true;
+      let start;
+      try {
+        const res = await fetch('/api/copilot/device/start', { method: 'POST', body: new FormData(), credentials: 'same-origin' });
+        start = await res.json();
+        if (!res.ok) { status.textContent = start.detail || 'Failed to start login'; status.className = 'admin-error'; reset(); return; }
+      } catch (e) { status.textContent = 'Request failed'; status.className = 'admin-error'; reset(); return; }
+
+      const { poll_id, user_code, verification_uri, verification_uri_complete, interval, expires_in } = start;
+      // Prefer the "complete" URL — it embeds the code so the user only has to
+      // click "Authorize" (no manual code entry).
+      const authUrl = verification_uri_complete || verification_uri || '';
+      const esc = (s) => String(s || '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+      copilotBtn.textContent = 'Waiting…';
+
+      // Cohesive waiting panel: spinner + status line, the device code as a
+      // copyable chip, and a primary "Authorize on GitHub" action.
+      status.className = '';
+      status.innerHTML =
+        '<div class="adm-copilot-panel">' +
+          '<div class="adm-copilot-wait"><span class="admin-spinner"></span>' +
+            '<span>Waiting for GitHub authorization…</span></div>' +
+          '<div class="adm-copilot-coderow">' +
+            '<span class="adm-copilot-code-label">Code</span>' +
+            '<code class="adm-copilot-code">' + esc(user_code) + '</code>' +
+            '<button type="button" class="admin-btn-sm adm-copilot-copy">Copy</button>' +
+          '</div>' +
+          '<a class="admin-btn-add adm-copilot-auth" href="' + encodeURI(authUrl) + '" target="_blank" rel="noopener">Authorize on GitHub ↗</a>' +
+          '<div class="adm-copilot-hint">A new tab opened on GitHub — approve there to finish. Didn\'t open? Use the button above.</div>' +
+        '</div>';
+      const copyBtn = status.querySelector('.adm-copilot-copy');
+      if (copyBtn) copyBtn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(user_code || ''); copyBtn.textContent = 'Copied'; setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500); } catch (e) {}
+      });
+      try { if (authUrl) window.open(authUrl, '_blank', 'noopener'); } catch (e) {}
+
+      const deadline = Date.now() + (expires_in || 900) * 1000;
+      const stepMs = Math.max((interval || 5), 2) * 1000;
+      const done = (cls, text) => { status.className = cls; status.textContent = text; reset(); };
+      const poll = async () => {
+        if (Date.now() > deadline) { done('admin-error', 'Authorization expired — try again.'); return; }
+        try {
+          const fd = new FormData(); fd.append('poll_id', poll_id);
+          const r = await fetch('/api/copilot/device/poll', { method: 'POST', body: fd, credentials: 'same-origin' });
+          const d = await r.json();
+          if (d.status === 'authorized') {
+            const n = ((d.endpoint && d.endpoint.models) || []).length;
+            done('admin-success', '✓ Connected — ' + n + ' Copilot model' + (n !== 1 ? 's' : '') + ' available.');
+            if (d.endpoint && d.endpoint.id) _recentlyAddedEpId = String(d.endpoint.id);
+            await loadEndpoints();
+            await _selectAddedModelInChat(d.endpoint || {});
+            return;
+          }
+          if (d.status === 'failed') { done('admin-error', 'Authorization failed (' + (d.error || 'denied') + ').'); return; }
+        } catch (e) { /* transient — keep polling */ }
+        setTimeout(poll, stepMs);
+      };
+      setTimeout(poll, stepMs);
+    });
+  }
 
   // Local "Add" button — sibling form for self-hosted base URLs.
   const localAddBtn = el('adm-epLocalAddBtn');
@@ -1114,6 +1244,7 @@ function initEndpointForm() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
   });
+  _refreshEndpointMeta();
 }
 
 /* ═══════════════════════════════════════════
@@ -1133,11 +1264,11 @@ const _GOOGLE_OAUTH_HELP = `To get Google OAuth credentials:
 
 const MCP_PRESETS = [
   { name: "Gmail",           command: "npx", args: ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],      env: { GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" },
-    oauthFile: { dir: "~/.gmail-mcp", filename: "gcp-oauth.keys.json" },
+    oauthFile: { dir: "gmail", filename: "gcp-oauth.keys.json" },
     oauth: {
       provider: "google",
-      keys_file: "~/.gmail-mcp/gcp-oauth.keys.json",
-      token_file: "~/.gmail-mcp/credentials.json",
+      keys_file: "gmail/gcp-oauth.keys.json",
+      token_file: "gmail/credentials.json",
       scopes: ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.settings.basic"],
     },
     help: `Setup:

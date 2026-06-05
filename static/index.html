@@ -1478,6 +1478,10 @@
                 <label class="settings-label">Tool call limit</label>
                 <input id="set-agentMaxTools" type="text" inputmode="numeric" placeholder="0 = unlimited" class="settings-select" style="width:120px;">
               </div>
+              <div class="settings-row">
+                <label class="settings-label">Max steps per message</label>
+                <input id="set-agentMaxRounds" type="text" inputmode="numeric" placeholder="20" class="settings-select" style="width:120px;">
+              </div>
               <div id="set-agentMsg" style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);"></div>
             </div>
           </div>
@@ -2061,8 +2065,10 @@
                   </button>
                   <div class="adm-provider-menu hidden" id="adm-provider-menu"></div>
                 </div>
+                <p class="admin-toggle-sub hidden" id="adm-epCursorInstallHint" style="margin:6px 0 0;line-height:1.45"></p>
                 <select id="adm-epProvider" style="display:none">
                   <option value="">Custom URL</option>
+                  <option value="cursor://local" data-logo="cursor">Cursor (local)</option>
                   <option value="https://api.anthropic.com" data-logo="anthropic">Anthropic</option>
                   <option value="https://api.deepseek.com/v1" data-logo="deepseek" selected>DeepSeek</option>
                   <option value="https://api.openai.com/v1" data-logo="openai">OpenAI</option>
@@ -2091,6 +2097,15 @@
                   <button class="admin-btn-sm hidden" id="adm-epApiCancelTestBtn" style="width:62px;text-align:center;">Cancel</button>
                   <button class="admin-btn-add" id="adm-epAddBtn" style="width:55px;text-align:center;">Add</button>
                 </div>
+                <div class="admin-model-form-row hidden" id="adm-epCursorRow">
+                  <input id="adm-epCursorCwd" type="text" placeholder="Workspace directory for Cursor bridge (default: Odysseus cwd)" style="flex:1">
+                </div>
+                <p class="admin-toggle-sub hidden" id="adm-epCursorHelp" style="margin:6px 0 0;line-height:1.45">
+                  Cursor endpoints work in <strong>Chat</strong> and <strong>Agent</strong> (not Compare/Research). Use your own Cursor API key from
+                  <a href="https://cursor.com/dashboard/integrations" target="_blank" rel="noopener noreferrer">Cursor Integrations</a>;
+                  usage is billed on your Cursor account. The SDK bridge runs on this Odysseus host — set
+                  <code>CURSOR_ALLOWED_WORKSPACE_ROOTS</code> to restrict workspace paths.
+                </p>
                 <div id="adm-epApiMsg" class="adm-ep-inline-msg"></div>
               </div>
             </div>
@@ -2264,7 +2279,7 @@
 <script type="module" src="/static/js/chatRenderer.js"></script>
 <script type="module" src="/static/js/codeRunner.js"></script>
 <script type="module" src="/static/js/chatStream.js"></script>
-<script type="module" src="/static/js/chat.js?v=20260520m"></script>
+<script type="module" src="/static/js/chat.js?v=20260604q"></script>
 <script type="module" src="/static/js/cookbook.js"></script>
 <script type="module" src="/static/js/search-chat.js"></script>
 <script type="module" src="/static/js/compare/index.js"></script>

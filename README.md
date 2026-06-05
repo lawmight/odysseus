@@ -405,6 +405,40 @@ npx -y @playwright/mcp@latest --version
 
 That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
 
+### GitHub Copilot as a provider
+
+Admins can connect **GitHub Copilot** from **Settings -> Add Models -> API**
+or by running `/setup copilot` in chat. Odysseus starts GitHub's device-flow
+login, provisions a model endpoint, and stores the token in the local database
+with the rest of your provider credentials.
+
+Copilot endpoints use GitHub's OpenAI-compatible API and work anywhere Odysseus
+uses regular chat/model endpoints. Availability and billing follow the signed-in
+GitHub account.
+
+### Cursor as a provider (Chat + Agent)
+
+| Install context | Cursor SDK |
+|-----------------|------------|
+| Core install | Not included (`requirements.txt` only) |
+| Optional features | `requirements-optional.txt` |
+| **Cursor Chat / Agent** | `pip install -r requirements-cursor.txt` on the machine running **uvicorn** |
+| Docker Compose (default image) | Not bundled — install SDK on the host or add `requirements-cursor.txt` in a custom image layer |
+
+Admins can add **Cursor (local)** in **Settings → Add Models → API** after the SDK is installed on the Odysseus host:
+
+```bash
+pip install -r requirements-cursor.txt
+```
+
+Paste a Cursor API key from [Cursor Integrations](https://cursor.com/dashboard/integrations), choose a workspace directory inside `CURSOR_ALLOWED_WORKSPACE_ROOTS`, then select a Cursor model such as `composer-2.5` from **Chat** or **Agent**.
+
+Model listing works via the Cursor HTTP API without the SDK; **Chat streaming** requires `cursor-sdk` and the bridge on the host where uvicorn runs.
+
+Cursor endpoints support **Chat** and **Agent** mode (BYOK — usage bills on your Cursor account). The SDK bridge runs on the Odysseus host (not inside the default Docker app image unless you install the SDK there). **Compare**, **Deep Research**, and background-job auto-continue skip Cursor endpoints.
+
+See [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) before bumping the pin in `requirements-cursor.txt`.
+
 ## Architecture
 ```
 app.py                   # FastAPI entry point

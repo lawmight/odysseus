@@ -54,6 +54,7 @@ class Session:
     owner: Optional[str] = None
     is_important: bool = False
     message_count: int = 0
+    cursor_agent_id: Optional[str] = None
 
     def __post_init__(self):
         if self.history is None:
@@ -76,8 +77,20 @@ class Session:
             _session_manager._persist_message(self.id, message)
 
     def get_context_messages(self) -> List[Dict[str, Any]]:
-        """Get messages in format for LLM API."""
-        return [msg.to_dict() for msg in self.history]
+        """Get messages in format for LLM API.
+
+        Slash-command / setup replies are persisted to history so they render
+        in the transcript, but they are UI chatter (e.g. ``/setup ...`` and its
+        status lines) the user never meant as conversation. They carry
+        ``metadata.source == "slash"``; exclude them here so they never reach
+        the model. Display/history-load paths use the raw ``history`` and are
+        unaffected.
+        """
+        return [
+            msg.to_dict()
+            for msg in self.history
+            if (msg.metadata or {}).get("source") != "slash"
+        ]
 
     def get(self, key: str, default=None):
         """Dict-like access for compatibility."""

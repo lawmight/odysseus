@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from core.models import ChatMessage
 from src.request_models import ChatRequest
-from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback
+from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback, _detect_provider
 from src.agent_loop import stream_agent_loop
 from src import agent_runs
 from src.model_context import estimate_tokens
@@ -36,6 +36,7 @@ from routes.chat_helpers import (
     run_post_response_tasks,
     clean_thinking_for_save,
     _enforce_chat_privileges,
+    tool_event_from_chat_tool_output,
 )
 from src.action_intents import classify_tool_intent as _classify_tool_intent
 
@@ -866,9 +867,18 @@ def setup_chat_routes(
             elif chat_mode == "chat":
                 _chat_start = time.time()
                 _answered_by = None  # set if the selected model failed and a fallback answered
+                _cursor_tool_events: List[dict] = []
                 # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                 try:
                     _chat_candidates = [(sess.endpoint_url, sess.model, sess.headers)] + _fallback_candidates
+                    _cursor_meta = None
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        _cursor_meta = {
+                            "session_id": session,
+                            "agent_id": session_manager.get_cursor_agent_id(session),
+                            "session_manager": session_manager,
+                            "owner": _user,
+                        }
                     async for chunk in stream_llm_with_fallback(
                         _chat_candidates,
                         messages,
@@ -881,6 +891,7 @@ def setup_chat_routes(
                         max_tokens=ctx.preset.max_tokens,
                         prompt_type=preset_id,
                         tools=None,
+                        cursor_meta=_cursor_meta,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -893,6 +904,18 @@ def setup_chat_routes(
                                     if not data.get("thinking"):
                                         full_response += data["delta"]
                                         _stream_set(session, partial=full_response)
+                                    yield chunk
+                                elif data.get("type") in ("tool_start", "tool_output"):
+                                    # Cursor generateImage tool SSE. chat.js renders image_url.
+                                    if data.get("type") == "tool_output":
+                                        _tev = tool_event_from_chat_tool_output(data)
+                                        if _tev:
+                                            if _tev.get("image_url"):
+                                                _tool = _tev.get("tool") or "generate_image"
+                                                _cursor_tool_events = [
+                                                    e for e in _cursor_tool_events if e.get("tool") != _tool
+                                                ]
+                                            _cursor_tool_events.append(_tev)
                                     yield chunk
                                 elif data.get("type") == "fallback":
                                     # Selected model failed; a fallback answered.
@@ -942,15 +965,21 @@ def setup_chat_routes(
                                     "usage_source": "estimated",
                                 }
                                 yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                            if full_response:
+                            if full_response or _cursor_tool_events:
+                                _save_body = full_response
+                                if not (_save_body or "").strip() and _cursor_tool_events:
+                                    _save_body = (
+                                        _cursor_tool_events[-1].get("output") or "Generated image."
+                                    )
                                 _saved_id = save_assistant_response(
-                                    sess, session_manager, session, full_response, last_metrics,
+                                    sess, session_manager, session, _save_body, last_metrics,
                                     character_name=ctx.preset.character_name,
                                     web_sources=web_sources,
                                     rag_sources=ctx.rag_sources,
                                     research_sources=research_sources,
                                     used_memories=ctx.used_memories,
                                     do_research=do_research,
+                                    tool_events=_cursor_tool_events or None,
                                     incognito=incognito,
                                 )
                                 if _saved_id:
@@ -975,30 +1004,75 @@ def setup_chat_routes(
                 finally:
                     _active_streams.pop(session, None)
             else:
-                # ── Agent mode: full agent loop with tools ──
+                # Agent mode: native loop or Cursor SDK engine.
                 _agent_rounds = 0
                 _agent_tool_calls = 0
+                _agent_tool_events: List[dict] = []
+                _agent_start = time.time()
                 _answered_by = None  # set if the selected model failed and a fallback answered
                 try:
                     from src.settings import get_setting
+                    from src.agent_tools import MAX_AGENT_ROUNDS as _DEFAULT_ROUNDS
                     _tool_budget = int(get_setting("agent_max_tool_calls", 0))
+                    # Per-message round cap from settings; clamp defensively in
+                    # case settings.json was hand-edited to a bad value.
+                    try:
+                        _max_rounds = int(get_setting("agent_max_rounds", _DEFAULT_ROUNDS) or _DEFAULT_ROUNDS)
+                    except (TypeError, ValueError):
+                        _max_rounds = _DEFAULT_ROUNDS
+                    _max_rounds = max(1, min(_max_rounds, 200))
 
-                    async for chunk in stream_agent_loop(
-                        sess.endpoint_url,
-                        sess.model,
-                        messages,
-                        headers=sess.headers,
-                        temperature=ctx.preset.temperature,
-                        max_tokens=ctx.preset.max_tokens,
-                        prompt_type=preset_id,
-                        max_tool_calls=_tool_budget,
-                        context_length=ctx.context_length,
-                        active_document=active_doc,
-                        session_id=session,
-                        disabled_tools=disabled_tools if disabled_tools else None,
-                        owner=_user,
-                        fallbacks=_fallback_candidates,
-                    ):
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        from src.providers.cursor_adapter import (
+                            extract_cursor_api_key,
+                            extract_cursor_cwd,
+                        )
+                        from src.providers.cursor_agent import stream_cursor_agent_loop
+                        from src.providers.cursor_mcp import (
+                            cursor_agent_mcp_from_db_enabled,
+                            load_cursor_agent_mcp_servers,
+                        )
+
+                        _cursor_cwd = extract_cursor_cwd(sess.headers)
+                        _cursor_mcp_servers = (
+                            load_cursor_agent_mcp_servers()
+                            if cursor_agent_mcp_from_db_enabled()
+                            else None
+                        )
+                        _agent_chunk_iter = stream_cursor_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            api_key=extract_cursor_api_key(sess.headers),
+                            cwd=_cursor_cwd,
+                            session_id=session,
+                            headers=sess.headers,
+                            cursor_agent_id=session_manager.get_cursor_agent_id(session),
+                            temperature=ctx.preset.temperature,
+                            max_tool_calls=_tool_budget,
+                            owner=_user,
+                            mcp_servers=_cursor_mcp_servers,
+                        )
+                    else:
+                        _agent_chunk_iter = stream_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            headers=sess.headers,
+                            temperature=ctx.preset.temperature,
+                            max_tokens=ctx.preset.max_tokens,
+                            prompt_type=preset_id,
+                            max_tool_calls=_tool_budget,
+                            max_rounds=_max_rounds,
+                            context_length=ctx.context_length,
+                            active_document=active_doc,
+                            session_id=session,
+                            disabled_tools=disabled_tools if disabled_tools else None,
+                            owner=_user,
+                            fallbacks=_fallback_candidates,
+                        )
+
+                    async for chunk in _agent_chunk_iter:
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
                                 data = json.loads(chunk[6:])
@@ -1013,16 +1087,42 @@ def setup_chat_routes(
                                 elif data.get("type") == "web_sources":
                                     web_sources = data.get("data", [])
                                     yield chunk
+                                elif data.get("type") == "cursor_agent_id":
+                                    _new_cursor_id = data.get("agent_id")
+                                    if _new_cursor_id:
+                                        session_manager.set_cursor_agent_id(session, _new_cursor_id)
+                                    yield chunk
                                 elif data.get("type") in (
                                     "tool_start", "tool_output", "agent_step",
                                     "doc_stream_open", "doc_stream_delta",
                                     "doc_update", "doc_suggestions", "ui_control",
+                                    "budget_exceeded",
+                                    "rounds_exhausted",
                                 ):
                                     if data.get("type") == "agent_step":
                                         _agent_rounds = max(_agent_rounds, data.get("round", 1))
                                     elif data.get("type") == "tool_start":
                                         _agent_tool_calls += 1
+                                    elif data.get("type") == "tool_output":
+                                        _tev = tool_event_from_chat_tool_output(data)
+                                        if _tev:
+                                            _agent_tool_events.append(_tev)
                                     yield chunk
+                                elif data.get("type") == "usage":
+                                    last_metrics = data.get("data", {})
+                                    last_metrics["model"] = _answered_by or sess.model
+                                    if ctx.context_length and last_metrics.get("input_tokens"):
+                                        pct = min(
+                                            round((last_metrics["input_tokens"] / ctx.context_length) * 100, 1),
+                                            100.0,
+                                        )
+                                        last_metrics["context_percent"] = pct
+                                        last_metrics["context_length"] = ctx.context_length
+                                    if last_metrics.get("gen_tps") and not last_metrics.get("tokens_per_second"):
+                                        last_metrics["tokens_per_second"] = last_metrics["gen_tps"]
+                                        last_metrics["tps_source"] = "backend"
+                                    last_metrics.setdefault("response_time", round(time.time() - _agent_start, 2))
+                                    yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
                                 elif data.get("type") == "fallback":
                                     # Selected model failed; a fallback answered.
                                     # Forward the notice and remember the real
@@ -1039,13 +1139,19 @@ def setup_chat_routes(
                         elif chunk.startswith("event: "):
                             yield chunk
                         elif chunk == "data: [DONE]\n\n":
-                            if full_response:
+                            if full_response or _agent_tool_events:
+                                _save_body = full_response
+                                if not (_save_body or "").strip() and _agent_tool_events:
+                                    _save_body = (
+                                        _agent_tool_events[-1].get("output") or "Agent run completed."
+                                    )
                                 _saved_id = save_assistant_response(
-                                    sess, session_manager, session, full_response, last_metrics,
+                                    sess, session_manager, session, _save_body, last_metrics,
                                     character_name=ctx.preset.character_name,
                                     web_sources=web_sources,
                                     rag_sources=ctx.rag_sources,
                                     used_memories=ctx.used_memories,
+                                    tool_events=_agent_tool_events or None,
                                     incognito=incognito,
                                 )
                                 if _saved_id:
@@ -1119,7 +1225,9 @@ def setup_chat_routes(
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
         stopped = agent_runs.stop(session_id)
-        return {"stopped": stopped}
+        from src.providers.cursor_adapter import cancel_cursor_run
+        cursor_stopped = await cancel_cursor_run(session_id)
+        return {"stopped": stopped or cursor_stopped}
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session

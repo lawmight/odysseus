@@ -58,6 +58,8 @@ def normalize_base(url: str) -> str:
 
 
 def _detect_provider(url: str) -> str:
+    if (url or "").startswith("cursor://"):
+        return "cursor"
     parsed = urlparse(url or "")
     host = parsed.hostname or ""
     path = (parsed.path or "").rstrip("/")
@@ -82,6 +84,8 @@ def _ollama_api_root(base: str) -> str:
 
 def build_chat_url(base: str) -> str:
     provider = _detect_provider(base)
+    if provider == "cursor":
+        return base.rstrip("/")
     if provider == "anthropic":
         host = urlparse(base).hostname or ""
         if host.endswith("anthropic.com") and base.rstrip("/").endswith("/v1"):
@@ -103,6 +107,8 @@ def build_headers(api_key, base: str) -> dict:
     if not api_key:
         return {}
     provider = _detect_provider(base)
+    if provider == "cursor":
+        return {"Authorization": f"Bearer {api_key}"}
     if provider == "anthropic":
         return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     return {"Authorization": f"Bearer {api_key}"}
@@ -150,6 +156,9 @@ class TestBuildChatUrl:
     def test_local_endpoint(self):
         assert build_chat_url("http://localhost:8000/v1") == "http://localhost:8000/v1/chat/completions"
 
+    def test_cursor_sentinel_passthrough(self):
+        assert build_chat_url("cursor://local") == "cursor://local"
+
     def test_ollama_cloud_native_api(self):
         assert build_chat_url("https://ollama.com/api") == "https://ollama.com/api/chat"
 
@@ -177,6 +186,10 @@ class TestBuildHeaders:
 
     def test_empty_key(self):
         assert build_headers("", "https://api.openai.com/v1") == {}
+
+
+    def test_cursor_headers(self):
+        assert build_headers("cur-key", "cursor://local") == {"Authorization": "Bearer cur-key"}
 
 
 class _Ep:

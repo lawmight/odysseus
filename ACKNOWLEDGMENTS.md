@@ -39,6 +39,14 @@ The full license texts are kept in [`licenses/`](licenses/).
 
 ---
 
+## Optional Python dependencies
+
+Installed via `requirements-cursor.txt` when using Cursor as a Chat provider:
+
+| Package | Purpose | License |
+|---|---|---|
+| [cursor-sdk](https://pypi.org/project/cursor-sdk/) | Cursor local bridge + Chat streaming | See package metadata on PyPI |
+
 ## Bundled via Docker Compose
 
 These services are pulled as images by the project's `docker-compose.yml`
