@@ -7,3 +7,5 @@
 | [CI_PARITY.md](./CI_PARITY.md) | Auto-generated CI/check comparison (run `bash scripts/ci-parity-report.sh`) |
 
 **Scripts:** `scripts/scaffold-pr-body.sh`, `scripts/validate-pr-body.js --explain`, `scripts/ci-preflight.sh --require-pr-body`
+
+**Agents:** [`.cursor/skills/fork-pr-ci/SKILL.md`](../../.cursor/skills/fork-pr-ci/SKILL.md) — PR description bot + local preflight workflow.
