@@ -16,7 +16,7 @@ Before opening a PR, follow [docs/guides/UPSTREAM_PR_GUIDELINES.md](../docs/guid
 - The Chat allowlist (`CURSOR_CHAT_TOOL_ALLOWLIST`) must not grow to shell/file/MCP tools through the chat path; those belong to the Agent engine.
 - `src/providers/cursor_adapter.py` and related routes should not widen `CURSOR_ALLOWED_WORKSPACE_ROOTS` behavior without an explicit security note.
 - Image and attachment handling must stay on supported SDK paths; avoid HTTP fallbacks that bypass Cursor SDK contracts.
-- Cursor endpoints must stay excluded from Compare, Deep Research, utility/vision resolvers, and background auto-continue (`src/bg_monitor.py`); see `docs/plans/cursor-agent-tab-integration-plan.md` Section 8.
+- Cursor endpoints must stay excluded from Compare, Deep Research, utility/vision resolvers, and background auto-continue. Enforced in `routes/chat_routes.py`, `routes/research_routes.py`, `src/bg_monitor.py`, `src/endpoint_resolver.py`, and related resolvers.
 - The optional Odysseus MCP DB -> Cursor Agent bridge must remain explicit opt-in (`cursor_agent_mcp_from_db`). Do not silently pass MCP DB commands, URLs, headers, env values, or per-tool-disabled servers to Cursor.
 
 ## Layering and maintainability

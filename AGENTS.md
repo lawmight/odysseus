@@ -324,7 +324,7 @@ PY
 - **Chat** and **Agent** modes support Cursor when the session uses a Cursor endpoint. Agent mode renders Cursor tool calls as Agent tool cards, including `generateImage` gallery URLs via `/api/generated-image/...`.
 - Cursor Agent MCP defaults to Cursor's workspace/user config (for example `.cursor/mcp.json`). Passing enabled Odysseus MCP DB rows to Cursor is disabled by default; set `cursor_agent_mcp_from_db: true` only after reviewing that MCP commands/URLs/env values are shared with the Cursor bridge/runtime.
 
-See integration plans on `main` under [`docs/plans/`](docs/plans/README.md). **Agent tab + Cursor** Phase 1 plus Plan B B2a-B3 follow-ups are shipped; Cloud Cursor agents remain a separate future plan.
+See [`docs/plans/README.md`](docs/plans/README.md) for Cursor integration status and upstream staging branch. **Agent tab + Cursor** Phase 1 plus B2a–B3 follow-ups are shipped; Cloud Cursor agents remain out of scope.
 
 **SDK upgrades:** [`docs/CURSOR_SDK_UPGRADES.md`](docs/CURSOR_SDK_UPGRADES.md) — bounded pin in `requirements-cursor.txt`; re-run the checklist before bumping. PyPI latest as of doc authoring: `0.1.6` (no newer release required an immediate code change).
 

@@ -59,7 +59,7 @@ Sample: **50** recently merged PRs on `pewdiepie-archdaemon/odysseus` (2026-06-0
 
 Upstream CONTRIBUTING asks agents to **open an issue first** describing the problem, then a PR. Bulk auto-generated PRs that skip visual/style rules are closed without review.
 
-For **Cursor-specific** work on the fork, also read [`.cursor/BUGBOT.md`](../../.cursor/BUGBOT.md) and [docs/plans/README.md](../plans/README.md). Upstream only needs that context when you contribute Cursor adapter changes upstream.
+For **Cursor-specific** work on the fork, also read [`.cursor/BUGBOT.md`](../../.cursor/BUGBOT.md), [docs/CURSOR_SDK_UPGRADES.md](../CURSOR_SDK_UPGRADES.md), and [docs/plans/README.md](../plans/README.md). Upstream only needs that context when you contribute Cursor adapter changes upstream.
 
 ---
 

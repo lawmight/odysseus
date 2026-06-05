@@ -31,7 +31,7 @@ These paths support **lawmight/odysseus** Cloud Agent workflows and fork CI. **E
 
 | Path | Purpose |
 |------|---------|
-| [docs/plans/merged-pr-23-cursor-sdk-upgrades.md](../plans/merged-pr-23-cursor-sdk-upgrades.md) | Merged PR record |
+| [docs/plans/README.md](../plans/README.md) | Shipped Cursor index (design archives in git history) |
 
 ## Upstream cursor PR
 
