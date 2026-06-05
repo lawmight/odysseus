@@ -25,7 +25,7 @@ Quick reference for agents on a prepared Cloud VM (after the `install` / update 
 
 Optional: `ODYSSEUS_DOCKER_BUILD=1` with `docker` mode runs `docker compose up -d --build` on boot (slower; use when images are stale).
 
-**UI:** `http://127.0.0.1:7000`. First-boot admin password: `data/admin-password.txt` (0600), user `admin`. Rebuild/restart the `odysseus` container after changing Python deps in Compose mode.
+**UI:** `http://127.0.0.1:7000`. First-boot admin password is printed by `setup.py` (or in `docker compose logs odysseus` for Compose). User `admin` unless `ODYSSEUS_ADMIN_USER` is set. Rebuild/restart the `odysseus` container after changing Python deps in Compose mode.
 
 **Docker on Cloud VMs:** Nested Docker needs `fuse-overlayfs` and `iptables-legacy` ([Cursor setup — Running Docker](https://cursor.com/docs/cloud-agent/setup#running-docker)). Verify with `sudo docker run --rm hello-world`. The daemon may not start via systemd — use `sudo sh -c 'dockerd >/tmp/dockerd.log 2>&1 &'` and wait for `sudo docker info`. Use `sudo docker` / `sudo docker compose` if `/var/run/docker.sock` is permission-denied. Logs should show `storage-driver=fuse-overlayfs` and `ChromaDB connected`.
 
@@ -122,10 +122,6 @@ if [[ -n "${CLOUD_AGENT_ALL_SECRET_NAMES:-}" ]] || [[ -n "${CURSOR_API_KEY:-}" ]
 fi
 [[ -f package.json ]] && command -v npm >/dev/null && npm install --no-audit --no-fund
 if [[ ! -f data/auth.json ]]; then
-  export ODYSSEUS_ADMIN_PASSWORD="${ODYSSEUS_ADMIN_PASSWORD:-odysseus-$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')}"
-  export ODYSSEUS_ADMIN_PASSWORD_FILE="${ODYSSEUS_ADMIN_PASSWORD_FILE:-data/admin-password.txt}"
-  install -d -m 700 data
-  (umask 077 && printf '%s\n' "$ODYSSEUS_ADMIN_PASSWORD" > "$ODYSSEUS_ADMIN_PASSWORD_FILE")
   python setup.py
 fi
 echo "install: OK"
@@ -149,8 +145,7 @@ That script (idempotent):
 - Installs `requirements.txt` and `requirements-optional.txt`
 - Installs **`requirements-cursor.txt`** (`cursor-sdk`) when a Cloud Agent env is detected (`CLOUD_AGENT_ALL_SECRET_NAMES`, `CURSOR_API_KEY`) or when `ODYSSEUS_INSTALL_CURSOR=1`
 - Runs `npm install` if Node is present
-- Runs `python setup.py` once if `data/auth.json` is missing
-- Saves a generated first-boot admin password to `data/admin-password.txt` (0600) instead of logging the value
+- Runs `python setup.py` once if `data/auth.json` is missing (temp admin password printed to install logs)
 
 You do **not** need to hand-run `pip install -r requirements-cursor.txt` if `install` already installed cursor-sdk — check:
 
@@ -242,8 +237,7 @@ Set `APP_BIND=127.0.0.1` only if you intentionally want loopback-only on the VM.
 
 ### Auth for local testing
 
-After `python setup.py`, credentials live in `data/auth.json`. Initial admin password is printed once on first create. Re-running setup skips user creation if `auth.json` exists.
-When `cloud-agent-install.sh` generates the password, it stores it in `data/admin-password.txt` and suppresses the value in install logs.
+After `python setup.py`, credentials live in `data/auth.json`. Initial admin password is printed once on first create (Docker: `docker compose logs odysseus`). Re-running setup skips user creation if `auth.json` exists.
 
 ### Lint
 
