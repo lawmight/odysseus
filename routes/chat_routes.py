@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 import logging
 from datetime import datetime
@@ -395,6 +396,12 @@ def setup_chat_routes(
         compare_mode = str(form_data.get("compare_mode", "")).lower() == "true"
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        # Workspace: confine the agent's file/shell tools to this folder. Validate
+        # it's a real directory; ignore (no confinement) otherwise.
+        workspace = (form_data.get("workspace") or "").strip()
+        if workspace:
+            _ws_real = os.path.realpath(os.path.expanduser(workspace))
+            workspace = _ws_real if os.path.isdir(_ws_real) else ""
         # Did the USER explicitly pick agent mode? (vs. us auto-escalating
         # below). Skill extraction should only learn from real agent sessions,
         # not chats we quietly promoted for a notes/calendar intent.
@@ -1070,6 +1077,7 @@ def setup_chat_routes(
                             disabled_tools=disabled_tools if disabled_tools else None,
                             owner=_user,
                             fallbacks=_fallback_candidates,
+                            workspace=workspace or None,
                         )
 
                     async for chunk in _agent_chunk_iter:
