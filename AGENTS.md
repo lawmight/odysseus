@@ -4,6 +4,33 @@ Guide for humans and agents working in this repo on **Cursor Cloud** (desktop VM
 
 Odysseus is a **Python 3.11+ FastAPI** app with a static JS frontend (no frontend build step). See `README.md` for full product docs.
 
+## Cursor Cloud specific instructions
+
+Quick reference for agents on a prepared Cloud VM (after the `install` / update script). Secrets, Cursor provider, and PR workflow are documented in the sections below.
+
+| Goal | Command |
+|------|---------|
+| Refresh Python/Node deps | `bash scripts/cloud-agent-install.sh` |
+| Full stack (recommended) | `cp .env.example .env` then `sudo docker compose up -d --build` |
+| Sidecars only + host app | `bash scripts/cloud-agent-services.sh start` then `bash scripts/cloud-agent-services.sh dev-server` |
+| Tests | `source venv/bin/activate && python -m pytest -q` |
+| Lint | None configured (see **Lint** below) |
+
+**Runtime mode:** set `ODYSSEUS_RUNTIME` in the Cloud environment dashboard (no JSON edits):
+
+| Value | Behavior |
+|-------|----------|
+| `docker` (default) | `start` runs full Compose stack on port **7000** |
+| `dev` | `start` brings up sidecars only; the **odysseus** terminal runs host `uvicorn` |
+
+Optional: `ODYSSEUS_DOCKER_BUILD=1` with `docker` mode runs `docker compose up -d --build` on boot (slower; use when images are stale).
+
+**UI:** `http://127.0.0.1:7000`. First-boot admin password: `data/admin-password.txt` (0600), user `admin`. Rebuild/restart the `odysseus` container after changing Python deps in Compose mode.
+
+**Docker on Cloud VMs:** Nested Docker needs `fuse-overlayfs` and `iptables-legacy` ([Cursor setup — Running Docker](https://cursor.com/docs/cloud-agent/setup#running-docker)). Verify with `sudo docker run --rm hello-world`. The daemon may not start via systemd — use `sudo sh -c 'dockerd >/tmp/dockerd.log 2>&1 &'` and wait for `sudo docker info`. Use `sudo docker` / `sudo docker compose` if `/var/run/docker.sock` is permission-denied. Logs should show `storage-driver=fuse-overlayfs` and `ChromaDB connected`.
+
+**Port forwarding:** Dev server binds `0.0.0.0:7000` by default (`scripts/cloud-agent-services.sh dev-server`). After VPN/routing changes, re-forward port 7000 in Cursor if the browser shows `ERR_EMPTY_RESPONSE`.
+
 ## What you cannot expect the agent to do
 
 | Task | Who does it |
@@ -133,7 +160,12 @@ source venv/bin/activate && python -c "import cursor_sdk; print('cursor-sdk OK')
 
 To change bootstrap behavior, edit `scripts/cloud-agent-install.sh` and commit; the next Cloud Agent boot re-runs `install`.
 
-Optional **`start`** / **`terminals`** in `environment.json` call `scripts/cloud-agent-services.sh` to bring up Docker sidecars and uvicorn (see below).
+**`start`** / **`terminals`** in `environment.json` call `scripts/cloud-agent-start.sh`, which reads **`ODYSSEUS_RUNTIME`**:
+
+- **`docker`** (default): full Compose stack (`docker compose up -d`; add `ODYSSEUS_DOCKER_BUILD=1` to rebuild).
+- **`dev`**: sidecars via `cloud-agent-services.sh start`; the **odysseus** terminal runs `dev-server` (host uvicorn).
+
+Set `ODYSSEUS_RUNTIME` in the Cloud environment dashboard so you do not edit JSON when switching modes.
 
 ---
 
