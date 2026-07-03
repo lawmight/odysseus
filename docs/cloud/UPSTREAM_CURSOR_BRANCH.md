@@ -13,7 +13,16 @@ You maintain one branch per upstream target for the Cursor SDK upstream PR:
 | `cursor/upstream-cursor-provider-5b2d` | Upstream PR against `main` |
 | `cursor/upstream-cursor-provider-dev-627e` | Upstream PR against `dev` |
 
-Hourly automation merges **upstream only** into that branch. It does **not** merge fork `main` and does **not** open lawmight sync PRs.
+The refresh tooling merges **upstream only** into that branch. It does **not** merge fork `main` and does **not** open lawmight sync PRs.
+
+## Design rationale
+
+| Approach | Verdict |
+|----------|---------|
+| Merge fork `main` + upstream into cursor branch | **Rejected.** Reintroduces fork noise upstream maintainers will reject. |
+| Mirror branches + sync PRs | **Rejected.** Same merge loop, more PRs to triage. |
+| Merge upstream only into cursor branch; carve to reset | **Chosen.** Matches upstream PR intent; refresh stays idempotent. |
+| Rebase cursor branch on a schedule | Rejected for now. Force-push risk on a shared branch; merge is safer for automation. |
 
 ## One-time: clean a polluted branch (recommended once)
 
@@ -26,7 +35,7 @@ bash scripts/carve-upstream-cursor-branch.sh \
   --source origin/cursor/upstream-cursor-provider-5b2d
 ```
 
-Review the diff. Remove any Copilot imports from `app.py`, `src/llm_core.py`, `src/endpoint_resolver.py` if the carve pulled them in. Merge README Cursor section manually if needed. Then push:
+Review the diff. Upstream ships its own `src/copilot.py` (since Jun 2026), so **reconcile** fork and upstream Copilot code paths in `app.py`, `src/llm_core.py`, `src/endpoint_resolver.py` — keep both providers working, delete neither side. Carved manifest files may also lag APIs that newer upstream code imports (known case: `src/ai_interaction.py` on upstream imports `resolve_endpoint_runtime` from `src/endpoint_resolver.py`); the built-in test run fails on these — port the upstream API into the carved file. Merge README Cursor section manually if needed. Then push:
 
 ```bash
 bash scripts/carve-upstream-cursor-branch.sh \
@@ -44,32 +53,46 @@ bash scripts/carve-upstream-cursor-branch.sh --target dev \
   --source origin/cursor/upstream-cursor-provider-dev-627e
 ```
 
-## One-time: Cursor Automation (hourly refresh)
+## Keeping the branch fresh
 
-1. Open [cursor.com/automations](https://cursor.com/automations) → **Create automation**.
-2. **Trigger:** Scheduled → `0 * * * *` (every hour) or `0 */6 * * *` (every 6 hours if you prefer less churn).
-3. **Repository:** `lawmight/odysseus`.
-4. **Tools:** disable **Open pull request**. No fork PRs for sync.
-5. **Model:** your preferred strong model (conflict resolution).
-6. **Prompt** (paste):
+The branch's only consumer is the upstream PR, so freshness matters when you are about to touch that PR — not every hour. Pick one of these, in order of preference:
+
+### Default: refresh on demand
+
+Before polishing or updating the upstream PR:
+
+```bash
+bash scripts/refresh-upstream-cursor-branch.sh --target main
+bash scripts/refresh-upstream-cursor-branch.sh --target dev   # if you use the dev branch
+```
+
+Zero standing infrastructure, no spend limits, no credentials parked in a scheduler.
+
+### Standing option: GitHub Actions cron
+
+The happy path (`fetch` + ancestor check, usually "no new commits") is deterministic and needs no LLM. A scheduled workflow that runs `refresh-upstream-cursor-branch.sh --target main` daily and fails the job on exit 2 (conflicts) or exit 3 (conformance) covers it for free; escalate to an agent only when the job fails. The scripts need no changes to support this.
+
+### Alternative: scheduled Cursor Automation
+
+Only if you want conflicts resolved unattended. Caveats first:
+
+- **Cost:** automations run as Cloud Agents (Max Mode); most runs are no-ops you still pay for. Set spend limits in [Cloud Agents settings](https://cursor.com/dashboard/cloud-agents). Prefer `0 8 * * *` (daily) over hourly.
+- **Trust:** the VM holds a write token for `lawmight/odysseus` plus any injected secrets, and the refresh installs and executes freshly merged upstream code (pip install + pytest). A malicious upstream commit gets code execution with those credentials on the next run. Only enable this if you accept that trust relationship.
+
+Setup: [cursor.com/automations](https://cursor.com/automations) → **Create automation** → Scheduled trigger, repository `lawmight/odysseus`, disable the **Open pull request** tool, strong model. Prompt:
 
 ```text
 Run the upstream Cursor branch refresh. Read .cursor/skills/upstream-cursor-branch/SKILL.md first.
 
 1. bash scripts/refresh-upstream-cursor-branch.sh --target main
 2. If exit 0 with "no new commits" — stop silently (no comment, no PR).
-3. If exit 2 (merge conflicts) — resolve conflicts per the skill, run tests, push same branch. Do NOT merge origin/main. Do NOT open a lawmight PR.
-4. Optionally run: bash scripts/refresh-upstream-cursor-branch.sh --target dev (same rules).
+3. If exit 2 (merge conflicts) — resolve the conflicts, COMMIT the merge on the same cursor branch, then re-run the refresh script; it detects the committed merge, checks conformance, runs tests, and pushes. Do NOT merge origin/main. Do NOT reset the branch to origin after resolving. Do NOT open a lawmight PR.
+4. If exit 3 (conformance) — the branch carries paths outside the manifest; stop and report. Do not push.
+5. Optionally run: bash scripts/refresh-upstream-cursor-branch.sh --target dev (same rules).
 
 Never merge origin/main into cursor/upstream-cursor-provider-* branches.
 Never add docs/cloud/FORK_ONLY_MANIFEST.md paths.
 ```
-
-7. **Billing:** automations run as Cloud Agents (Max Mode). Set spend limits in [Cloud Agents settings](https://cursor.com/dashboard/cloud-agents).
-
-### Optional second automation for upstream dev only
-
-If hourly dev refresh is too noisy, run dev refresh once daily (`0 8 * * *`) with `--target dev` only.
 
 ## One-time: Cloud environment install script
 
@@ -88,23 +111,16 @@ The Cloud Agent service account (or your account for private automations) needs 
 ## Daily work (you)
 
 ```bash
-git fetch origin upstream
+git fetch --multiple origin upstream
 git checkout cursor/upstream-cursor-provider-5b2d
 git pull origin cursor/upstream-cursor-provider-5b2d
 # polish Cursor SDK integration
 git push origin cursor/upstream-cursor-provider-5b2d
 ```
 
-Automation keeps upstream merged underneath. You only resolve conflicts when upstream touches the same files as your cursor work.
+Push before running the refresh script: it refuses to run over unpushed local commits (so it never discards them).
 
-## Manual refresh (without waiting for automation)
-
-```bash
-bash scripts/refresh-upstream-cursor-branch.sh --target main
-bash scripts/refresh-upstream-cursor-branch.sh --target dev
-```
-
-Dry-run:
+Dry-run preview of a refresh:
 
 ```bash
 bash scripts/refresh-upstream-cursor-branch.sh --target main --dry-run
@@ -134,7 +150,9 @@ Do not merge fork-only files listed in [FORK_ONLY_MANIFEST.md](./FORK_ONLY_MANIF
 | Symptom | Fix |
 |---------|-----|
 | `branch origin/cursor/... missing` | Run carve script once |
-| Merge conflicts every hour | Re-carve once; then conflicts should be rare |
-| Tests fail after refresh | Fix cursor integration; do not merge fork main to "fix" |
+| Merge conflicts on every refresh | Re-carve once; then conflicts should be rare |
+| Refresh exits 3 (conformance) | Branch differs from upstream outside the manifest — re-carve, or `--no-conformance` for a polluted branch you have not carved yet |
+| Refresh refuses: unpushed local commits | Push (or reset) the local cursor branch first; the guard prevents discarding your work |
+| Tests fail after refresh or carve | Usually manifest drift: upstream code imports an API missing from a carved manifest file (known case: `resolve_endpoint_runtime` in `src/endpoint_resolver.py`). Port the upstream API into the carved file; never merge fork main to "fix" |
 | Automation opens fork PRs | Disable Open pull request tool; fix prompt |
 | Branch has 100+ unrelated commits | Re-carve; consider squash before upstream PR |

@@ -35,7 +35,7 @@ routes/chat_helpers.py        # tool_event_from_chat_tool_output for Chat tool_e
 routes/gallery_helpers.py     # save_generated_image_bytes for generateImage
 ```
 
-When carving full files from fork `main`, **remove fork-only GitHub Copilot imports** from `app.py`, `src/llm_core.py`, and `src/endpoint_resolver.py` (upstream has no `src/copilot.py`).
+When carving full files from fork `main`, **reconcile Copilot code paths** in `app.py`, `src/llm_core.py`, and `src/endpoint_resolver.py` — upstream ships its own `src/copilot.py` (since Jun 2026), so keep both providers working and delete neither side. Also port any upstream APIs the carved files lag behind (known case: `resolve_endpoint_runtime` in `src/endpoint_resolver.py`, imported by upstream's `src/ai_interaction.py`).
 
 ## Routes (review for non-cursor hunks before upstream)
 
@@ -74,61 +74,24 @@ ACKNOWLEDGMENTS.md                  # cursor-sdk row
 docs/CURSOR_SDK_UPGRADES.md
 ```
 
-## Carve command (from lawmight branch with cursor work)
+## Carving and refreshing
+
+The machine-readable manifest lives in `UPSTREAM_CURSOR_MANIFEST` in [scripts/upstream-cursor-lib.sh](../../scripts/upstream-cursor-lib.sh) — the single source of truth. Preview it (and which paths a source ref is missing) with:
 
 ```bash
-git remote add upstream https://github.com/pewdiepie-archdaemon/odysseus.git 2>/dev/null || true
-git fetch upstream main origin main
-
-git checkout -b cursor/upstream-cursor-provider-5b2d upstream/main
-
-SOURCE=origin/main
-git checkout "$SOURCE" -- \
-  requirements-cursor.txt \
-  src/providers/cursor_adapter.py \
-  src/providers/cursor_agent.py \
-  src/providers/cursor_mcp.py \
-  src/llm_core.py \
-  src/endpoint_resolver.py \
-  src/bg_monitor.py \
-  src/chat_processor.py \
-  core/models.py \
-  core/database.py \
-  core/session_manager.py \
-  app.py \
-  routes/model_routes.py \
-  routes/chat_routes.py \
-  routes/chat_helpers.py \
-  routes/gallery_helpers.py \
-  static/index.html \
-  static/js/admin.js \
-  tests/test_cursor_adapter.py \
-  tests/test_cursor_admin_ui.py \
-  tests/test_cursor_agent.py \
-  tests/test_cursor_agent_skills.py \
-  tests/test_cursor_chat_tool_events.py \
-  tests/test_cursor_mcp_bridge.py \
-  tests/test_llm_core_cursor.py \
-  tests/test_bg_monitor_cursor.py \
-  tests/test_model_routes.py \
-  tests/test_endpoint_resolver.py \
-  docs/CURSOR_SDK_UPGRADES.md \
-  ACKNOWLEDGMENTS.md
-
-# Strip fork-only Copilot hooks from carved glue (upstream has no src/copilot.py)
-# README: merge Cursor section manually if upstream README diverged
-```
-
-Or refresh the live staging branch:
-
-```bash
-bash scripts/refresh-upstream-cursor-branch.sh --target main
+bash scripts/carve-upstream-cursor-branch.sh --target main --dry-run
 ```
 
 One-time rebuild (upstream base + manifest paths only):
 
 ```bash
 bash scripts/carve-upstream-cursor-branch.sh --target main --source origin/main
+```
+
+Refresh the live staging branch:
+
+```bash
+bash scripts/refresh-upstream-cursor-branch.sh --target main
 ```
 
 See [docs/cloud/UPSTREAM_CURSOR_BRANCH.md](../cloud/UPSTREAM_CURSOR_BRANCH.md) and `.cursor/skills/upstream-cursor-branch/SKILL.md`.
@@ -143,12 +106,8 @@ Resolve conflicts in `routes/*.py` and `tests/test_model_routes.py` by keeping u
 
 ## Verify
 
+Run the cursor test subset defined once in `upstream_cursor_run_tests` ([scripts/upstream-cursor-lib.sh](../../scripts/upstream-cursor-lib.sh)):
+
 ```bash
-source venv/bin/activate
-pip install -r requirements.txt -r requirements-cursor.txt
-pytest tests/test_cursor_adapter.py tests/test_model_routes.py \
-  tests/test_cursor_chat_tool_events.py tests/test_cursor_admin_ui.py \
-  tests/test_cursor_agent.py tests/test_cursor_agent_skills.py \
-  tests/test_cursor_mcp_bridge.py tests/test_llm_core_cursor.py \
-  tests/test_bg_monitor_cursor.py -q
+source scripts/upstream-cursor-lib.sh && upstream_cursor_run_tests
 ```

@@ -31,9 +31,12 @@ These paths support **lawmight/odysseus** Cloud Agent workflows and fork CI. **E
 
 | Path | Purpose |
 |------|---------|
-| [docs/cloud/UPSTREAM_CURSOR_BRANCH.md](../cloud/UPSTREAM_CURSOR_BRANCH.md) | Hourly upstream refresh runbook + Cursor Automation prompt |
+| [docs/plans/README.md](../plans/README.md) | Shipped Cursor index (design archives in git history) |
+| [docs/cloud/UPSTREAM_CURSOR_BRANCH.md](../cloud/UPSTREAM_CURSOR_BRANCH.md) | Upstream refresh runbook (carve, scheduling, troubleshooting) |
+| [scripts/upstream-cursor-lib.sh](../../scripts/upstream-cursor-lib.sh) | Shared branch map + manifest for refresh/carve |
 | [scripts/refresh-upstream-cursor-branch.sh](../../scripts/refresh-upstream-cursor-branch.sh) | Merge upstream into cursor branch only |
 | [scripts/carve-upstream-cursor-branch.sh](../../scripts/carve-upstream-cursor-branch.sh) | Rebuild cursor branch from manifest |
+| [.cursor/skills/upstream-cursor-branch/SKILL.md](../../.cursor/skills/upstream-cursor-branch/SKILL.md) | Agent guardrails for the cursor upstream branches |
 
 ## Upstream cursor PR
 
