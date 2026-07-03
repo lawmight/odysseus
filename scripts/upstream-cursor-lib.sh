@@ -92,3 +92,27 @@ upstream_cursor_is_up_to_date() {
   local branch_ref="$2"
   git merge-base --is-ancestor "$upstream_ref" "$branch_ref" 2>/dev/null
 }
+
+# Fail if HEAD differs from the upstream base outside the manifest (+ README.md,
+# which is merged manually per the note above). Catches fork noise before push.
+upstream_cursor_check_conformance() {
+  local upstream_sha="$1"
+  local -a offending=()
+  local path allowed match
+  while IFS= read -r path; do
+    match=0
+    for allowed in "${UPSTREAM_CURSOR_MANIFEST[@]}" README.md; do
+      if [[ "$path" == "$allowed" ]]; then
+        match=1
+        break
+      fi
+    done
+    [[ $match -eq 1 ]] || offending+=("$path")
+  done < <(git diff --name-only "$upstream_sha" HEAD)
+  if [[ ${#offending[@]} -gt 0 ]]; then
+    echo "upstream-cursor-lib: paths outside UPSTREAM_CURSOR_MANIFEST differ from upstream base:" >&2
+    printf '  %s\n' "${offending[@]}" >&2
+    echo "upstream-cursor-lib: remove them (or re-carve) before pushing the cursor branch" >&2
+    return 1
+  fi
+}
