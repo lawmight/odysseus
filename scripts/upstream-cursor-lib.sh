@@ -74,17 +74,16 @@ upstream_cursor_run_tests() {
   source venv/bin/activate
   python -m pip install -q -r requirements.txt
   [[ -f requirements-cursor.txt ]] && python -m pip install -q -r requirements-cursor.txt
-  python -m pytest -q \
-    tests/test_cursor_adapter.py \
-    tests/test_model_routes.py \
-    tests/test_cursor_chat_tool_events.py \
-    tests/test_cursor_admin_ui.py \
-    tests/test_cursor_agent.py \
-    tests/test_cursor_agent_skills.py \
-    tests/test_cursor_mcp_bridge.py \
-    tests/test_llm_core_cursor.py \
-    tests/test_bg_monitor_cursor.py \
-    tests/test_endpoint_resolver.py
+  local -a test_files=()
+  local p
+  for p in "${UPSTREAM_CURSOR_MANIFEST[@]}"; do
+    [[ "$p" == tests/* ]] && test_files+=("$p")
+  done
+  if [[ ${#test_files[@]} -eq 0 ]]; then
+    echo "upstream-cursor-lib: no tests/* paths in UPSTREAM_CURSOR_MANIFEST" >&2
+    return 1
+  fi
+  python -m pytest -q "${test_files[@]}"
 }
 
 upstream_cursor_is_up_to_date() {

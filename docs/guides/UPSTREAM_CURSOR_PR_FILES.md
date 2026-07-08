@@ -2,7 +2,7 @@
 
 Use this list when carving a PR to **pewdiepie-archdaemon/odysseus**. Rebase onto current upstream `main` (or `dev` if maintainers prefer), then apply only these paths from the lawmight fork.
 
-**Live staging branch (fork):** `cursor/upstream-cursor-provider-5b2d` — carved from `upstream/main` @ fork `main`, excludes fork-only Copilot hooks and Cloud Agent paths.
+**Live staging branch (fork):** `cursor/upstream-cursor-provider-5b2d` — carved from `upstream/main` @ fork `main`; keep fork Cloud Agent / fork-only paths out of the carve. Upstream ships its own `src/copilot.py`, so reconcile Copilot glue in carved files (keep both providers; delete neither side).
 
 **Do not include** paths listed in [FORK_ONLY_MANIFEST.md](../cloud/FORK_ONLY_MANIFEST.md).
 

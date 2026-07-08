@@ -79,14 +79,8 @@ fi
 
 BRANCH_SHA="$(git rev-parse "origin/${FORK_BRANCH}")"
 
-if upstream_cursor_is_up_to_date "$UPSTREAM_SHA" "$BRANCH_SHA"; then
-  echo "upstream sync: no new commits (${FORK_BRANCH} already contains ${UPSTREAM_REF} @ ${UPSTREAM_SHA:0:12})"
-  exit 0
-fi
-
-# A local cursor branch may hold a committed conflict resolution from a prior
-# run. Resetting it to origin (checkout -B) would silently discard that merge,
-# so classify the local tip before touching anything.
+# Classify local tip before the up-to-date early return so unpushed work is
+# never silently ignored when origin already contains upstream.
 NEED_MERGE=1
 if git rev-parse --verify "refs/heads/${FORK_BRANCH}^{commit}" >/dev/null 2>&1; then
   LOCAL_SHA="$(git rev-parse "refs/heads/${FORK_BRANCH}")"
@@ -104,6 +98,20 @@ if git rev-parse --verify "refs/heads/${FORK_BRANCH}^{commit}" >/dev/null 2>&1; 
     fi
   fi
 fi
+
+if upstream_cursor_is_up_to_date "$UPSTREAM_SHA" "$BRANCH_SHA"; then
+  if [[ $NEED_MERGE -eq 0 ]]; then
+    # Local tip already has upstream but origin does not yet — continue to test+push.
+    :
+  else
+    echo "upstream sync: no new commits (${FORK_BRANCH} already contains ${UPSTREAM_REF} @ ${UPSTREAM_SHA:0:12})"
+    exit 0
+  fi
+fi
+
+# A local cursor branch may hold a committed conflict resolution from a prior
+# run (NEED_MERGE=0 above). Resetting it to origin (checkout -B) would discard
+# that merge, so we skip merge and check out the local tip instead.
 
 if [[ $DRY_RUN -eq 1 ]]; then
   if [[ $NEED_MERGE -eq 0 ]]; then

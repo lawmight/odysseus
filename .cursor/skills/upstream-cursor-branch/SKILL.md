@@ -74,7 +74,7 @@ bash scripts/refresh-upstream-cursor-branch.sh --target main --no-push
 
 Cursor pytest subset runs automatically unless `--no-test`.
 
-## Work flow for humans
+## Workflow for humans
 
 ```bash
 git checkout cursor/upstream-cursor-provider-5b2d

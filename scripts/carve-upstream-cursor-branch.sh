@@ -30,7 +30,7 @@ Options:
   --no-push             Commit locally; do not push (default)
   --push                Push with --force-with-lease after carve (review diff first)
   --no-test             Skip cursor pytest subset
-  --force               Allow overwriting a dirty worktree
+  --force               Allow dirty worktree; also discard unique local cursor-branch commits
   -h, --help            Show this help
 
 After carve: upstream now ships its own src/copilot.py, so reconcile fork and
@@ -105,6 +105,24 @@ fi
 if [[ $FORCE -eq 0 ]] && [[ -n "$(git status --porcelain)" ]]; then
   echo "carve-upstream-cursor-branch: dirty worktree; commit/stash or pass --force" >&2
   exit 1
+fi
+
+# Refuse to reset a local cursor branch that holds unpushed work unless --force.
+# git checkout -B overwrites the branch tip even with a clean worktree.
+if git rev-parse --verify "refs/heads/${FORK_BRANCH}^{commit}" >/dev/null 2>&1; then
+  LOCAL_SHA="$(git rev-parse "refs/heads/${FORK_BRANCH}")"
+  UPSTREAM_SHA="$(git rev-parse "${UPSTREAM_REF}")"
+  if [[ "$LOCAL_SHA" != "$UPSTREAM_SHA" ]]; then
+    if git merge-base --is-ancestor "$LOCAL_SHA" "$UPSTREAM_SHA" 2>/dev/null; then
+      : # local is an ancestor of upstream; reset is a fast-forward discard of behind tips
+    elif [[ $FORCE -eq 1 ]]; then
+      echo "carve-upstream-cursor-branch: --force: resetting local ${FORK_BRANCH} (${LOCAL_SHA:0:12}) onto ${UPSTREAM_REF}"
+    else
+      echo "carve-upstream-cursor-branch: local ${FORK_BRANCH} has commits not in ${UPSTREAM_REF}." >&2
+      echo "  Push them, move them elsewhere, or pass --force to discard and re-carve." >&2
+      exit 1
+    fi
+  fi
 fi
 
 git checkout -B "$FORK_BRANCH" "$UPSTREAM_REF"
