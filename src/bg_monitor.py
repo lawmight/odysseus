@@ -89,6 +89,18 @@ async def _run_followup(rec: dict) -> bool:
         logger.info("bg-followup: session %s gone for job %s — skipping", rec.get("session_id"), rec.get("id"))
         return True
 
+    # Cursor-backed sessions run the Cursor agent engine, not the native loop.
+    # _drain_agent below uses stream_agent_loop, which can't drive a cursor://
+    # endpoint, so skip auto-continue here rather than run the wrong engine.
+    # Consider it handled so we don't retry forever.
+    from src.llm_core import _detect_provider
+    if _detect_provider(getattr(sess, "endpoint_url", "") or "") == "cursor":
+        logger.info(
+            "bg-followup: session %s is a Cursor session — native auto-continue unsupported, skipping job %s",
+            sess.id, rec.get("id"),
+        )
+        return True
+
     # Don't write into a session that's mid-stream. The followup appends to
     # history + save_sessions(); a concurrent live turn does the same, and with
     # no per-session lock the two interleave (reordered/clobbered messages).

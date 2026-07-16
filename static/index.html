@@ -2201,7 +2201,9 @@
                   <option value="https://opencode.ai/zen/go/v1" data-logo="opencode">OpenCode Go</option>
                   <option value="https://api.z.ai/api/coding/paas/v4" data-logo="zhipu">Z.AI Coding Plan</option>
                   <option value="https://integrate.api.nvidia.com/v1" data-logo="nvidia">NVIDIA</option>
+                  <option value="cursor://local" data-logo="cursor">Cursor (local)</option>
                 </select>
+                <p class="admin-toggle-sub hidden" id="adm-epCursorInstallHint" style="margin:6px 0 0;line-height:1.45"></p>
                 <div class="admin-model-form-row" id="adm-epApiKey-row">
                   <div style="position:relative;flex:1;display:flex;align-items:center;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:0.55;pointer-events:none;"><path d="M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="M15.5 7.5l3 3"/></svg>
@@ -2211,6 +2213,14 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add
                   </button>
                 </div>
+                <div class="admin-model-form-row hidden" id="adm-epCursorRow">
+                  <input id="adm-epCursorCwd" type="text" placeholder="Workspace directory for Cursor bridge (default: Odysseus cwd)" style="flex:1">
+                </div>
+                <p class="admin-toggle-sub hidden" id="adm-epCursorHelp" style="margin:6px 0 0;line-height:1.45">
+                  Cursor endpoints work in <strong>Chat</strong> and <strong>Agent</strong> (not Compare/Research). Use your own Cursor API key from
+                  <a href="https://cursor.com/dashboard/integrations" target="_blank" rel="noopener noreferrer">Cursor Integrations</a>;
+                  usage is billed on your Cursor account. The SDK bridge runs on this Odysseus host.
+                </p>
                 <div id="adm-epApiMsg" class="adm-ep-inline-msg"></div>
                 <div id="adm-deviceAuthStatus" class="adm-ep-inline-msg" style="min-height:0;margin-top:0;"></div>
               </div>

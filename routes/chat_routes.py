@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from core.models import ChatMessage
 from src.request_models import ChatRequest
-from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback
+from src.llm_core import llm_call_async, stream_llm, stream_llm_with_fallback, _detect_provider
 from src.agent_loop import stream_agent_loop
 from src import agent_runs
 from src.model_context import estimate_tokens
@@ -40,6 +40,7 @@ from routes.chat_helpers import (
     run_post_response_tasks,
     clean_thinking_for_save,
     _enforce_chat_privileges,
+    tool_event_from_chat_tool_output,
 )
 from src.action_intents import ToolIntent, classify_tool_intent as _classify_tool_intent
 from src.tool_policy import (
@@ -1242,6 +1243,15 @@ def setup_chat_routes(
                 # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                 try:
                     _chat_candidates = [(sess.endpoint_url, sess.model, sess.headers)] + _fallback_candidates
+                    _cursor_tool_events: List[dict] = []
+                    _cursor_meta = None
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        _cursor_meta = {
+                            "session_id": session,
+                            "agent_id": session_manager.get_cursor_agent_id(session),
+                            "session_manager": session_manager,
+                            "owner": _user,
+                        }
                     async for chunk in stream_llm_with_fallback(
                         _chat_candidates,
                         messages,
@@ -1255,6 +1265,7 @@ def setup_chat_routes(
                         prompt_type=preset_id,
                         tools=None,
                         session_id=session,
+                        cursor_meta=_cursor_meta,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -1269,6 +1280,18 @@ def setup_chat_routes(
                                     else:
                                         full_response += data["delta"]
                                         _stream_set(session, partial=full_response)
+                                    yield chunk
+                                elif data.get("type") in ("tool_start", "tool_output"):
+                                    # Cursor generateImage tool SSE. chat.js renders image_url.
+                                    if data.get("type") == "tool_output":
+                                        _tev = tool_event_from_chat_tool_output(data)
+                                        if _tev:
+                                            if _tev.get("image_url"):
+                                                _tool = _tev.get("tool") or "generate_image"
+                                                _cursor_tool_events = [
+                                                    e for e in _cursor_tool_events if e.get("tool") != _tool
+                                                ]
+                                            _cursor_tool_events.append(_tev)
                                     yield chunk
                                 elif data.get("type") == "fallback":
                                     # Selected model failed; a fallback answered.
@@ -1333,18 +1356,24 @@ def setup_chat_routes(
                                     "usage_source": "estimated",
                                 }
                                 yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                            if full_response:
+                            if full_response or _cursor_tool_events:
                                 _metrics_to_save = dict(last_metrics or {})
                                 if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                     _metrics_to_save["thinking"] = thinking_response.strip()
+                                _save_body = full_response
+                                if not (_save_body or "").strip() and _cursor_tool_events:
+                                    _save_body = (
+                                        _cursor_tool_events[-1].get("output") or "Generated image."
+                                    )
                                 _saved_id = save_assistant_response(
-                                    sess, session_manager, session, full_response, _metrics_to_save,
+                                    sess, session_manager, session, _save_body, _metrics_to_save,
                                     character_name=ctx.preset.character_name,
                                     web_sources=web_sources,
                                     rag_sources=ctx.rag_sources,
                                     research_sources=research_sources,
                                     used_memories=ctx.used_memories,
                                     do_research=effective_do_research,
+                                    tool_events=_cursor_tool_events or None,
                                     incognito=incognito,
                                 )
                                 if _saved_id:
@@ -1406,30 +1435,64 @@ def setup_chat_routes(
                     if _search_enabled:
                         _forced_tools = set(WEB_TOOL_NAMES)
 
-                    async for chunk in stream_agent_loop(
-                        sess.endpoint_url,
-                        sess.model,
-                        messages,
-                        headers=sess.headers,
-                        temperature=ctx.preset.temperature,
-                        max_tokens=ctx.preset.max_tokens,
-                        prompt_type=preset_id,
-                        max_tool_calls=_tool_budget,
-                        max_rounds=_max_rounds,
-                        context_length=ctx.context_length,
-                        active_document=active_doc,
-                        active_email=active_email_ctx,
-                        session_id=session,
-                        disabled_tools=disabled_tools if disabled_tools else None,
-                        tool_policy=tool_policy,
-                        owner=_user,
-                        fallbacks=_fallback_candidates,
-                        plan_mode=plan_mode,
-                        approved_plan=approved_plan or None,
-                        workspace=workspace or None,
-                        forced_tools=_forced_tools,
-                        uploaded_files=ctx.uploaded_files,
-                    ):
+                    if _detect_provider(sess.endpoint_url) == "cursor":
+                        from src.providers.cursor_adapter import (
+                            extract_cursor_api_key,
+                            extract_cursor_cwd,
+                        )
+                        from src.providers.cursor_agent import stream_cursor_agent_loop
+                        from src.providers.cursor_mcp import (
+                            cursor_agent_mcp_from_db_enabled,
+                            load_cursor_agent_mcp_servers,
+                        )
+
+                        _cursor_cwd = extract_cursor_cwd(sess.headers)
+                        _cursor_mcp_servers = (
+                            load_cursor_agent_mcp_servers()
+                            if cursor_agent_mcp_from_db_enabled()
+                            else None
+                        )
+                        _agent_chunk_iter = stream_cursor_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            api_key=extract_cursor_api_key(sess.headers),
+                            cwd=_cursor_cwd,
+                            session_id=session,
+                            headers=sess.headers,
+                            cursor_agent_id=session_manager.get_cursor_agent_id(session),
+                            temperature=ctx.preset.temperature,
+                            max_tool_calls=_tool_budget,
+                            owner=_user,
+                            mcp_servers=_cursor_mcp_servers,
+                        )
+                    else:
+                        _agent_chunk_iter = stream_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            headers=sess.headers,
+                            temperature=ctx.preset.temperature,
+                            max_tokens=ctx.preset.max_tokens,
+                            prompt_type=preset_id,
+                            max_tool_calls=_tool_budget,
+                            max_rounds=_max_rounds,
+                            context_length=ctx.context_length,
+                            active_document=active_doc,
+                            active_email=active_email_ctx,
+                            session_id=session,
+                            disabled_tools=disabled_tools if disabled_tools else None,
+                            tool_policy=tool_policy,
+                            owner=_user,
+                            fallbacks=_fallback_candidates,
+                            plan_mode=plan_mode,
+                            approved_plan=approved_plan or None,
+                            workspace=workspace or None,
+                            forced_tools=_forced_tools,
+                            uploaded_files=ctx.uploaded_files,
+                        )
+
+                    async for chunk in _agent_chunk_iter:
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
                                 data = json.loads(chunk[6:])
@@ -1445,6 +1508,11 @@ def setup_chat_routes(
                                     yield chunk
                                 elif data.get("type") == "web_sources":
                                     web_sources = data.get("data", [])
+                                    yield chunk
+                                elif data.get("type") == "cursor_agent_id":
+                                    _new_cursor_id = data.get("agent_id")
+                                    if _new_cursor_id:
+                                        session_manager.set_cursor_agent_id(session, _new_cursor_id)
                                     yield chunk
                                 elif data.get("type") in (
                                     "tool_start", "tool_output", "agent_step",
@@ -1600,7 +1668,9 @@ def setup_chat_routes(
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
         stopped = agent_runs.stop(session_id)
-        return {"stopped": stopped}
+        from src.providers.cursor_adapter import cancel_cursor_run
+        cursor_stopped = await cancel_cursor_run(session_id)
+        return {"stopped": stopped or cursor_stopped}
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session

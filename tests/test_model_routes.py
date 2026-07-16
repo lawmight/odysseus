@@ -36,6 +36,7 @@ with preserve_import_state("core.database", "src.database", "core.session_manage
     import src.endpoint_resolver as endpoint_resolver
     import src.llm_core as llm_core
     from routes.model_routes import (
+        CursorAdapterError,
         _match_provider_curated,
         _curate_models,
         _visible_models,
@@ -45,6 +46,7 @@ with preserve_import_state("core.database", "src.database", "core.session_manage
         _classify_endpoint,
         _effective_endpoint_kind,
         _probe_endpoint,
+        _probe_single_model,
         _ping_endpoint,
         _parse_model_list,
         _normalize_refresh_mode,
@@ -630,6 +632,321 @@ class TestSetupProbeSafety:
 
         assert _probe_endpoint("https://api.anthropic.com/v1") == ANTHROPIC_MODELS
 
+    def test_cursor_probe_uses_cursor_models_endpoint(self, monkeypatch):
+        monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=5: ["composer-2.5"])
+
+        assert _probe_endpoint("cursor://local", "cur-key") == ["composer-2.5"]
+
+    def test_cursor_probe_returns_empty_on_cursor_error(self, monkeypatch):
+        def fail(api_key, timeout=5):
+            raise CursorAdapterError("bad key", status=401)
+
+        monkeypatch.setattr(model_routes, "list_cursor_models", fail)
+
+        assert _probe_endpoint("cursor://local", "bad-key") == []
+
+    def test_cursor_single_model_probe_checks_cursor_models(self, monkeypatch):
+        monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=8: ["composer-2.5"])
+
+        assert _probe_single_model("cursor://local", "cur-key", "composer-2.5")["status"] == "ok"
+
+    def test_cursor_single_model_probe_fails_when_model_missing(self, monkeypatch):
+        monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=8: ["other-model"])
+
+        result = _probe_single_model("cursor://local", "cur-key", "composer-2.5")
+
+        assert result["status"] == "fail"
+        assert "Model not returned" in result["error"]
+
+
+
+def _model_endpoint_route(path, method):
+    return _get_route(path, method)
+
+
+def _fake_model_request(user=None):
+    req = SimpleNamespace()
+    req.state = SimpleNamespace(current_user=user, api_token=False, api_token_scopes=[], api_token_owner=None)
+    req.app = SimpleNamespace(state=SimpleNamespace(auth_manager=None))
+    return req
+
+
+@pytest.fixture
+def cursor_route_env(monkeypatch, tmp_path):
+    import src.auth_helpers as auth_helpers
+    rows = []
+    monkeypatch.setenv("CURSOR_ALLOWED_WORKSPACE_ROOTS", str(tmp_path))
+    monkeypatch.setattr(model_routes, "ModelEndpoint", _RouteModelEndpoint)
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: _RouteDb(rows))
+    monkeypatch.setattr(model_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(model_routes, "_load_settings", lambda: {"default_endpoint_id": "exists"})
+    monkeypatch.setattr(model_routes, "_save_settings", lambda settings: None)
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", True)
+    monkeypatch.setattr(model_routes, "_disable_stale_cookbook_local_endpoints", lambda db: 0)
+    monkeypatch.setattr(model_routes, "_rewrite_loopback_for_docker", lambda b, **k: b)
+    monkeypatch.setattr(auth_helpers, "get_current_user", lambda req: None)
+    monkeypatch.setattr(auth_helpers, "effective_user", lambda req: None)
+    _entries = [{"id": "composer-2.5", "displayName": "Composer 2.5"}]
+    monkeypatch.setattr(model_routes, "list_cursor_model_entries", lambda api_key, timeout=5: list(_entries))
+    monkeypatch.setattr(model_routes, "list_cursor_models", lambda api_key, timeout=5: ["composer-2.5"])
+    return rows, str(tmp_path)
+
+
+def test_create_cursor_endpoint_stores_provider_metadata(cursor_route_env):
+    rows, workspace = cursor_route_env
+    create = _model_endpoint_route("/api/model-endpoints", "POST")
+
+    response = create(
+        _fake_model_request(),
+        name="cursor-endpoint",
+        base_url="cursor://local",
+        api_key="cur-key",
+        skip_probe="false",
+        require_models="false",
+        provider="cursor",
+        provider_config="",
+        cursor_cwd=workspace,
+        model_type="llm",
+        supports_tools="",
+        shared="true",
+        endpoint_kind="local",
+        model_refresh_mode="",
+        model_refresh_interval="",
+        model_refresh_timeout="",
+        pinned_models="",
+        container_local="false",
+    )
+
+    assert response["provider"] == "cursor"
+    assert response["base_url"] == model_routes.CURSOR_LOCAL_URL
+    assert response["supports_tools"] is False
+    assert json.loads(response["provider_config"])["cwd"] == workspace
+    assert rows[0].provider == "cursor"
+    assert rows[0].base_url == model_routes.CURSOR_LOCAL_URL
+    assert json.loads(rows[0].provider_config)["cwd"] == workspace
+
+
+def test_list_model_endpoints_includes_cursor_metadata(cursor_route_env):
+    rows, workspace = cursor_route_env
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur",
+            name="cursor-endpoint",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps(["composer-2.5"]),
+            supports_tools=False,
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    response = list_endpoint(_fake_model_request(), include_meta=False)
+
+    assert response[0]["provider"] == "cursor"
+    assert json.loads(response[0]["provider_config"])["cwd"] == workspace
+
+
+def test_list_model_endpoints_cursor_objects_count_as_visible(cursor_route_env):
+    """Cursor stores {id, displayName} in cached_models; list must not show 0/0."""
+    rows, workspace = cursor_route_env
+    entries = [
+        {"id": "composer-2.5", "displayName": "Composer 2.5"},
+        {"id": "gpt-4", "displayName": "GPT-4"},
+    ]
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur2",
+            name="Cursor (local)",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps(entries),
+            supports_tools=False,
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    response = list_endpoint(_fake_model_request(), include_meta=False)
+
+    assert response[0]["models"] == ["composer-2.5", "gpt-4"]
+    assert response[0]["hidden_count"] == 0
+    assert response[0]["online"] is True
+
+
+def test_create_cursor_endpoint_propagates_cursor_error(monkeypatch, cursor_route_env):
+    _, workspace = cursor_route_env
+
+    def fail(api_key, timeout=5):
+        raise CursorAdapterError("bad key", status=401)
+
+    monkeypatch.setattr(model_routes, "list_cursor_model_entries", fail)
+    monkeypatch.setattr(model_routes, "list_cursor_models", fail)
+    create = _model_endpoint_route("/api/model-endpoints", "POST")
+
+    with pytest.raises(HTTPException) as excinfo:
+        create(
+            _fake_model_request(),
+            name="cursor-endpoint-error",
+            base_url="cursor://local",
+            api_key="bad-key",
+            skip_probe="false",
+            require_models="false",
+            provider="cursor",
+            provider_config="",
+            cursor_cwd=workspace,
+            model_type="llm",
+            supports_tools="",
+            shared="true",
+        endpoint_kind="local",
+        model_refresh_mode="",
+        model_refresh_interval="",
+        model_refresh_timeout="",
+        pinned_models="",
+        container_local="false",
+        )
+
+    assert excinfo.value.status_code == 401
+    assert "bad key" in excinfo.value.detail
+
+
+def test_create_cursor_endpoint_rejects_non_llm_model_type(cursor_route_env):
+    _, workspace = cursor_route_env
+    create = _model_endpoint_route("/api/model-endpoints", "POST")
+
+    with pytest.raises(HTTPException) as excinfo:
+        create(
+            _fake_model_request(),
+            name="cursor-endpoint-image",
+            base_url="cursor://local",
+            api_key="cur-key",
+            skip_probe="false",
+            require_models="false",
+            provider="cursor",
+            provider_config="",
+            cursor_cwd=workspace,
+            model_type="image",
+            supports_tools="",
+            shared="true",
+        endpoint_kind="local",
+        model_refresh_mode="",
+        model_refresh_interval="",
+        model_refresh_timeout="",
+        pinned_models="",
+        container_local="false",
+        )
+
+    assert excinfo.value.status_code == 400
+    assert "only support LLM" in excinfo.value.detail
+
+
+def test_create_cursor_endpoint_rejects_missing_sdk(monkeypatch, cursor_route_env):
+    _, workspace = cursor_route_env
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", False)
+    create = _model_endpoint_route("/api/model-endpoints", "POST")
+
+    with pytest.raises(HTTPException) as excinfo:
+        create(
+            _fake_model_request(),
+            name="cursor-endpoint-no-sdk",
+            base_url="cursor://local",
+            api_key="cur-key",
+            skip_probe="false",
+            require_models="false",
+            provider="cursor",
+            provider_config="",
+            cursor_cwd=workspace,
+            model_type="llm",
+            supports_tools="",
+            shared="true",
+        endpoint_kind="local",
+        model_refresh_mode="",
+        model_refresh_interval="",
+        model_refresh_timeout="",
+        pinned_models="",
+        container_local="false",
+        )
+
+    assert excinfo.value.status_code == 503
+    assert "requirements-cursor.txt" in excinfo.value.detail
+
+
+def test_list_model_endpoints_include_meta(cursor_route_env):
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    plain = list_endpoint(_fake_model_request(), include_meta=False)
+    wrapped = list_endpoint(_fake_model_request(), include_meta=True)
+
+    assert isinstance(plain, list)
+    assert wrapped["meta"]["cursor_sdk_available"] is True
+    assert "requirements-cursor.txt" in wrapped["meta"]["cursor_install_hint"]
+    assert isinstance(wrapped["endpoints"], list)
+
+
+def test_list_model_endpoints_flags_cursor_sdk_missing(monkeypatch, cursor_route_env):
+    rows, workspace = cursor_route_env
+    monkeypatch.setattr(model_routes, "CURSOR_SDK_AVAILABLE", False)
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur",
+            name="cursor-endpoint",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps([{"id": "composer-2.5", "displayName": "Composer 2.5"}]),
+            supports_tools=False,
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    list_endpoint = _model_endpoint_route("/api/model-endpoints", "GET")
+
+    response = list_endpoint(_fake_model_request(), include_meta=False)
+
+    assert response[0]["status"] == "sdk_missing"
+    assert response[0]["cursor_sdk_missing"] is True
+    assert response[0]["online"] is False
+
+
+def test_api_models_normalizes_cursor_cached_entries(monkeypatch, cursor_route_env):
+    rows, workspace = cursor_route_env
+    rows.append(
+        _RouteModelEndpoint(
+            id="cur",
+            name="Cursor (local)",
+            base_url=model_routes.CURSOR_LOCAL_URL,
+            api_key="cur-key",
+            is_enabled=True,
+            model_type="llm",
+            cached_models=json.dumps(
+                [
+                    {"id": "composer-2.5", "displayName": "Composer 2.5"},
+                    {"id": "default", "displayName": "Auto"},
+                ]
+            ),
+            provider="cursor",
+            provider_config=json.dumps({"cwd": workspace}),
+        )
+    )
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    get_models = _model_endpoint_route("/api/models", "GET")
+
+    result = get_models(_fake_model_request(user="admin"))
+
+    assert len(result["items"]) == 1
+    item = result["items"][0]
+    assert item["models"] == ["composer-2.5", "default"]
+    assert item["models_display"] == ["Composer 2.5", "Auto"]
+    assert item["url"] == model_routes.CURSOR_LOCAL_URL
+
+
 def test_ollama_endpoint_error_message_includes_troubleshooting():
     msg = model_routes._model_endpoint_error_message(
         "http://localhost:11434/v1",
@@ -832,6 +1149,10 @@ class _RouteModelEndpoint:
     created_at = _RouteColumn("created_at")
 
     def __init__(self, **kwargs):
+        self.hidden_models = None
+        self.pinned_models = None
+        self.cached_models = None
+        self.created_at = None
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -1034,6 +1355,9 @@ def _create_form_kwargs(**overrides):
         model_refresh_interval="",
         model_refresh_timeout="",
         supports_tools="",
+        provider="",
+        provider_config="",
+        cursor_cwd="",
         pinned_models="",
         container_local="false",
         shared="true",

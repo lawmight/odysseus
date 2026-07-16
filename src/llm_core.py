@@ -823,6 +823,8 @@ def _detect_provider(url: str) -> str:
     Unknown hosts fall back to the OpenAI-compatible default, which the
     majority of providers implement.
     """
+    if (url or "").strip().lower().startswith("cursor://"):
+        return "cursor"
     if _is_ollama_native_url(url):
         return "ollama"
     if _host_match(url, "anthropic.com"):
@@ -967,6 +969,8 @@ def _provider_label(url: str) -> str:
     """Human-friendly provider name for error messages."""
     if not url:
         return "provider"
+    if (url or "").strip().lower().startswith("cursor://"):
+        return "Cursor"
     if _host_match(url, "anthropic.com"): return "Anthropic"
     if _host_match(url, "ollama.com"): return "Ollama Cloud"
     if _host_match(url, "x.ai"): return "xAI"
@@ -1672,6 +1676,19 @@ def list_model_ids(
     if cached:
         return cached
     provider = _detect_provider(base_chat_url)
+    if provider == "cursor":
+        try:
+            from src.providers.cursor_adapter import extract_cursor_api_key, list_cursor_models
+            h = headers
+            if isinstance(h, str):
+                try:
+                    h = json.loads(h)
+                except Exception:
+                    h = None
+            h = h if isinstance(h, dict) else None
+            return list_cursor_models(extract_cursor_api_key(h), timeout=timeout)
+        except Exception:
+            return []
     if provider == "anthropic":
         return list(ANTHROPIC_MODELS)
     try:
@@ -2064,6 +2081,8 @@ async def llm_call_async(
 
 def _stream_target_url(url: str) -> str:
     provider = _detect_provider(url)
+    if provider == "cursor":
+        return (url or "").rstrip("/")
     if provider == "anthropic":
         return _normalize_anthropic_url(url)
     if provider == "ollama":
@@ -2077,7 +2096,49 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                     tool_choice_none: bool = False, workload: str = "foreground"):
+                     tool_choice_none: bool = False, workload: str = "foreground", **kwargs):
+    # Cursor SDK bridge — no HTTP local-slot / OpenAI path.
+    if _detect_provider(url) == "cursor":
+        from src.providers.cursor_adapter import (
+            extract_cursor_api_key,
+            extract_cursor_cwd,
+            stream_cursor_chat,
+        )
+        h = headers
+        if isinstance(h, str):
+            try:
+                h = json.loads(h)
+            except Exception:
+                h = None
+        h = h if isinstance(h, dict) else None
+        api_key = extract_cursor_api_key(h)
+        cwd = extract_cursor_cwd(h)
+        cursor_meta = kwargs.pop("cursor_meta", None) or {}
+        cursor_agent_id = cursor_meta.get("agent_id")
+        odysseus_session_id = cursor_meta.get("session_id")
+        async for chunk in stream_cursor_chat(
+            model,
+            messages,
+            api_key=api_key,
+            cwd=cwd,
+            cursor_agent_id=cursor_agent_id,
+            odysseus_session_id=odysseus_session_id,
+            owner=cursor_meta.get("owner"),
+        ):
+            if chunk.startswith("data: ") and '"type": "cursor_agent_id"' in chunk:
+                try:
+                    payload = json.loads(chunk[6:].strip())
+                    new_id = payload.get("agent_id")
+                    if new_id and cursor_meta.get("session_id"):
+                        cursor_meta["agent_id"] = new_id
+                        mgr = cursor_meta.get("session_manager")
+                        if mgr is not None:
+                            mgr.set_cursor_agent_id(cursor_meta["session_id"], new_id)
+                except Exception:
+                    pass
+            yield chunk
+        return
+
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
         async for chunk in _stream_llm_inner(
@@ -2092,6 +2153,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             tools=tools,
             session_id=session_id,
             tool_choice_none=tool_choice_none,
+            **kwargs,
         ):
             yield chunk
 
@@ -2100,7 +2162,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                             timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                             tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                            tool_choice_none: bool = False):
+                            tool_choice_none: bool = False, **kwargs):
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:

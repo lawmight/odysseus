@@ -13,6 +13,10 @@ let modalEl = null;
 // the endpoints list can flash a glow on that row. Cleared once the
 // animation fires.
 let _recentlyAddedEpId = null;
+let _endpointMeta = {
+  cursor_sdk_available: true,
+  cursor_install_hint: '',
+};
 let _authPolicy = { password_min_length: 8, reserved_usernames: [] };
 
 function el(id) { return document.getElementById(id); }
@@ -482,14 +486,22 @@ async function loadEndpoints() {
     settingsModule.refreshAiModelEndpoints();
   }
   try {
-    const res = await fetch('/api/model-endpoints', { credentials: 'same-origin' });
+    const res = await fetch('/api/model-endpoints?include_meta=1', { credentials: 'same-origin' });
     // Treat a non-OK response (e.g. 401/403 for non-admins, or backend
     // returning an error envelope) the same as "no endpoints yet": show the
     // empty state, not "Failed to load". The user just installed the app —
     // there's literally nothing to load, so the error read as broken UI.
     let data = [];
     if (res.ok) {
-      try { data = await res.json(); } catch { data = []; }
+      try {
+        const payload = await res.json();
+        if (payload && Array.isArray(payload.endpoints) && payload.meta) {
+          _endpointMeta = payload.meta;
+          data = payload.endpoints;
+        } else {
+          data = payload;
+        }
+      } catch { data = []; }
     }
     if (!Array.isArray(data) || data.length === 0) {
       const empty = '<div class="admin-empty">None</div>';
@@ -779,7 +791,40 @@ async function _saveEpModelState(epId, panel) {
 function initEndpointForm() {
   const provider = el('adm-epProvider');
   const urlInput = el('adm-epUrl');
+  const cursorRow = el('adm-epCursorRow');
+  const cursorHelp = el('adm-epCursorHelp');
+  const cursorCwd = el('adm-epCursorCwd');
+  const cursorInstallHint = el('adm-epCursorInstallHint');
   const kindSel = el('adm-epKind');
+
+  function _updateCursorInstallHint() {
+    if (!cursorInstallHint) return;
+    if (!_endpointMeta.cursor_sdk_available && _endpointMeta.cursor_install_hint) {
+      cursorInstallHint.textContent = _endpointMeta.cursor_install_hint;
+      cursorInstallHint.classList.remove('hidden');
+    } else {
+      cursorInstallHint.textContent = '';
+      cursorInstallHint.classList.add('hidden');
+    }
+  }
+
+  async function _refreshEndpointMeta() {
+    try {
+      const res = await fetch('/api/model-endpoints?include_meta=1', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (payload && payload.meta) {
+        _endpointMeta = payload.meta;
+        _updateCursorInstallHint();
+        _renderPickerMenu();
+        if (provider.value === 'cursor://local' && !_endpointMeta.cursor_sdk_available) {
+          provider.value = '';
+          provider.dispatchEvent(new Event('change', { bubbles: true }));
+          _syncPickerCurrent();
+        }
+      }
+    } catch (_) { /* silent */ }
+  }
 
   // Custom provider picker — mirrors the (now hidden) <select id="adm-epProvider">
   // so the rest of this function (which reads provider.value and dispatches
@@ -864,7 +909,9 @@ function initEndpointForm() {
   }
   function _renderPickerMenu() {
     if (!pickerMenu) return;
-    pickerMenu.innerHTML = Array.from(provider.options).map(o => {
+    pickerMenu.innerHTML = Array.from(provider.options)
+      .filter(o => o.value !== 'cursor://local' || _endpointMeta.cursor_sdk_available)
+      .map(o => {
       const logo = o.dataset.logo ? (providerLogo(o.dataset.logo) || '') : '';
       const active = o.value === provider.value ? ' active' : '';
       return `<div class="adm-provider-item${active}" role="option" data-value="${o.value.replace(/"/g, '&quot;')}">
@@ -884,6 +931,7 @@ function initEndpointForm() {
     _renderPickerMenu();
     _syncPickerCurrent();
     if (provider.value && !urlInput.value) urlInput.value = provider.value;
+    _refreshEndpointMeta();
     pickerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       pickerMenu.classList.toggle('hidden');
@@ -912,14 +960,27 @@ function initEndpointForm() {
 
   provider.addEventListener('change', () => {
     if (_isDeviceAuthSelected()) {
+      if (cursorRow) cursorRow.classList.add('hidden');
+      if (cursorHelp) cursorHelp.classList.add('hidden');
+      urlInput.style.display = '';
       _setApiFormForProvider();
       _renderPickerMenu();
       _syncPickerCurrent();
       return;
     }
+    const isCursor = provider.value === 'cursor://local';
     if (provider.value) urlInput.value = provider.value;
     else urlInput.value = '';
-    if (kindSel) kindSel.value = provider.value ? 'api' : 'proxy';
+    if (cursorRow) cursorRow.classList.toggle('hidden', !isCursor);
+    if (cursorHelp) cursorHelp.classList.toggle('hidden', !isCursor);
+    if (isCursor) {
+      urlInput.style.display = 'none';
+      const epType = el('adm-epType');
+      if (epType) epType.value = 'llm';
+    } else {
+      urlInput.style.display = '';
+      if (kindSel) kindSel.value = provider.value ? 'api' : 'proxy';
+    }
     _setApiFormForProvider();
   });
   urlInput.addEventListener('input', () => {
@@ -1070,8 +1131,10 @@ function initEndpointForm() {
     msg.textContent = ''; msg.className = '';
     const rawUrl = (urlInput.value || provider.value).trim();
     const apiKey = el('adm-epApiKey').value.trim();
+    const isCursor = rawUrl === 'cursor://local';
     if (!rawUrl) { msg.textContent = 'Select a provider or enter a base URL'; msg.className = 'admin-error'; return; }
-    if (provider.value && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (provider.value && !isCursor && !apiKey) { msg.textContent = 'API key is required for cloud providers'; msg.className = 'admin-error'; return; }
+    if (isCursor && !apiKey) { msg.textContent = 'Cursor API key is required'; msg.className = 'admin-error'; return; }
     // Normalize URL (fix typos, add /v1, strip wrong paths)
     const url = provider.value && rawUrl === provider.value ? rawUrl : _normalizeBaseUrl(rawUrl);
     const btn = el('adm-epAddBtn');
@@ -1084,7 +1147,10 @@ function initEndpointForm() {
       fd.append('model_refresh_mode', endpointKind === 'proxy' ? 'manual' : 'auto');
       fd.append('model_refresh_timeout', '30');
       if (apiKey) fd.append('api_key', apiKey);
-      if (provider.value && provider.selectedOptions && provider.selectedOptions[0]) {
+      if (provider.value === 'cursor://local') {
+        fd.append('provider', 'cursor');
+        if (cursorCwd && cursorCwd.value.trim()) fd.append('cursor_cwd', cursorCwd.value.trim());
+      } else if (provider.value && provider.selectedOptions && provider.selectedOptions[0]) {
         fd.append('name', provider.selectedOptions[0].textContent.trim());
       }
       const epType = el('adm-epType');
@@ -1097,6 +1163,9 @@ function initEndpointForm() {
         const count = d.models ? d.models.length : 0;
         urlInput.value = ''; urlInput.style.display = '';
         el('adm-epApiKey').value = ''; provider.value = '';
+        if (cursorCwd) cursorCwd.value = '';
+        if (cursorRow) cursorRow.classList.add('hidden');
+        if (cursorHelp) cursorHelp.classList.add('hidden');
         if (kindSel) kindSel.value = 'proxy';
         if (epType) epType.value = 'llm';
         if (d.id) _recentlyAddedEpId = String(d.id);

@@ -1,0 +1,2 @@
+# Bounded pin: re-run docs/CURSOR_SDK_UPGRADES.md before raising the upper bound.
+cursor-sdk>=0.1.6,<0.2
