@@ -13,8 +13,28 @@ from urllib.parse import urlparse, urlunparse
 
 from core.database import SessionLocal, ModelEndpoint
 from src.llm_core import _detect_provider, _host_match, _is_kimi_code_url, KIMI_CODE_USER_AGENT, _ollama_api_root
+from src.providers.cursor_adapter import (
+    CURSOR_LOCAL_URL,
+    cursor_headers,
+    is_cursor_url,
+    normalize_cached_cursor_models,
+)
 
 logger = logging.getLogger(__name__)
+
+_HTTP_ONLY_PREFIXES = frozenset({"utility", "task", "research", "vision"})
+
+
+def _http_safe_fallback(
+    setting_prefix: str,
+    fallback_url: Optional[str],
+    fallback_model: Optional[str],
+    fallback_headers: Optional[Dict],
+) -> Tuple[Optional[str], Optional[str], Optional[Dict]]:
+    """Background HTTP callers cannot POST to cursor:// — drop that fallback."""
+    if setting_prefix in _HTTP_ONLY_PREFIXES and is_cursor_url(fallback_url or ""):
+        return None, None, None
+    return fallback_url, fallback_model, fallback_headers
 
 # Model-name substrings that are NOT chat/generation models. When an endpoint
 # has no explicit model configured we pick the first CHAT model from its list —
@@ -27,12 +47,20 @@ _NON_CHAT_MODEL = (
 )
 
 
+def _model_id_from_cached(m) -> str:
+    if isinstance(m, dict):
+        return str(m.get("id") or m.get("model") or "")
+    return str(m or "")
+
+
 def _first_chat_model(models) -> Optional[str]:
     """First model that isn't an embedding/tts/etc.; falls back to models[0]."""
     for m in (models or []):
-        if not any(p in str(m).lower() for p in _NON_CHAT_MODEL):
-            return m
-    return (models[0] if models else None)
+        mid = _model_id_from_cached(m)
+        if mid and not any(p in mid.lower() for p in _NON_CHAT_MODEL):
+            return mid
+    raw = models or []
+    return _model_id_from_cached(raw[0]) if raw else None
 
 
 def _endpoint_cached_models(ep) -> list:
@@ -112,7 +140,11 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
     store refreshable credentials in ProviderAuthSession and must resolve a
     current access token at call time.
     """
-    base = normalize_base(getattr(ep, "base_url", "") or "")
+    ep_provider = (getattr(ep, "provider", "") or "").strip()
+    if ep_provider == "cursor" or is_cursor_url(getattr(ep, "base_url", "") or ""):
+        base = CURSOR_LOCAL_URL
+    else:
+        base = normalize_base(getattr(ep, "base_url", "") or "")
     api_key = getattr(ep, "api_key", None)
     auth_id = getattr(ep, "provider_auth_id", None)
     if auth_id:
@@ -232,6 +264,8 @@ def _anthropic_api_root(base: str) -> str:
 
 def build_chat_url(base: str) -> str:
     """Return the correct chat endpoint URL for a given base."""
+    if is_cursor_url(base):
+        return base.rstrip("/")
     base = _prepare_endpoint_base(base)
     provider = _detect_provider(base)
     if provider == "anthropic":
@@ -256,6 +290,8 @@ def build_models_url(base: str) -> Optional[str]:
     untouched (so custom prefixes like ``/openai`` or ``/api/openai/v1`` keep
     their semantics).
     """
+    if is_cursor_url(base):
+        return None
     base = _prepare_endpoint_base(base)
     provider = _detect_provider(base)
     if provider == "anthropic":
@@ -277,8 +313,12 @@ def build_models_url(base: str) -> Optional[str]:
     return _append_endpoint_path(base, "/models")
 
 
-def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
+def build_headers(api_key: Optional[str], base: str, provider_config: Optional[str] = None) -> Dict[str, str]:
     """Build auth headers for an endpoint."""
+    if is_cursor_url(base):
+        if not api_key:
+            return {}
+        return cursor_headers(api_key, provider_config)
     provider = _detect_provider(base)
     headers: Dict[str, str] = {}
     if provider == "anthropic":
@@ -325,7 +365,7 @@ def resolve_endpoint(
         from src.settings import get_user_setting, load_settings
         settings = load_settings()
     except Exception:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     owner_str = owner or ""
     def _stg(key: str) -> str:
@@ -344,7 +384,7 @@ def resolve_endpoint(
     # This prevents background tasks from jumping to the global default_model
     # when the user is mid-conversation with a different model.
     if not ep_id and fallback_url and fallback_model:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     # Unset Utility (or anything else that didn't have a fallback) means "same as Default Chat Model".
     if not ep_id:
@@ -352,7 +392,7 @@ def resolve_endpoint(
         model = _stg("default_model")
 
     if not ep_id:
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
     db = SessionLocal()
     try:
@@ -366,15 +406,19 @@ def resolve_endpoint(
         else:
             ep = ep.first()
         if not ep:
-            return fallback_url, fallback_model, fallback_headers
+            return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
+
+        ep_provider = (getattr(ep, "provider", "") or "").strip()
+        if ep_provider == "cursor" and setting_prefix in _HTTP_ONLY_PREFIXES:
+            return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
 
         try:
             base, api_key = resolve_endpoint_runtime(ep, owner=owner)
         except Exception as e:
             logger.warning("Could not resolve endpoint runtime credentials: %s", e)
-            return fallback_url, fallback_model, fallback_headers
+            return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
         chat_url = build_chat_url(base)
-        headers = build_headers(api_key, base)
+        headers = build_headers(api_key, base, getattr(ep, "provider_config", None))
 
         # Discard a configured model the user has since disabled on the
         # endpoint (e.g. a stale `default_model` left pointing at a now-hidden
@@ -391,7 +435,7 @@ def resolve_endpoint(
         return chat_url, model or fallback_model, headers
     except Exception as e:
         logger.debug(f"Could not resolve {setting_prefix} endpoint: {e}")
-        return fallback_url, fallback_model, fallback_headers
+        return _http_safe_fallback(setting_prefix, fallback_url, fallback_model, fallback_headers)
     finally:
         db.close()
 
@@ -424,7 +468,7 @@ def resolve_endpoint_by_id(
             logger.warning("Could not resolve endpoint runtime credentials: %s", e)
             return None
         chat_url = build_chat_url(base)
-        headers = build_headers(api_key, base)
+        headers = build_headers(api_key, base, getattr(ep, "provider_config", None))
         m = (model or "").strip()
         # Drop a model the user disabled on the endpoint, then pick the first
         # enabled chat model rather than a hidden one.
@@ -461,19 +505,24 @@ def resolve_utility_fallback_candidates(owner: Optional[str] = None) -> list:
         if not utility_ep:
             utility_chain = get_user_setting("utility_model_fallbacks", owner or "", settings.get("utility_model_fallbacks") or []) or []
             if utility_chain:
-                return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner)
+                return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner, exclude_cursor=True)
             return _resolve_fallback_candidates("default_model_fallbacks", owner=owner)
     except Exception:
         pass
-    return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner)
+    return _resolve_fallback_candidates("utility_model_fallbacks", owner=owner, exclude_cursor=True)
 
 
 def resolve_vision_fallback_candidates(owner: Optional[str] = None) -> list:
     """Configured fallback chain for the Vision model (`vision_model_fallbacks`)."""
-    return _resolve_fallback_candidates("vision_model_fallbacks", owner=owner)
+    return _resolve_fallback_candidates("vision_model_fallbacks", owner=owner, exclude_cursor=True)
 
 
-def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) -> list:
+def _resolve_fallback_candidates(
+    setting_key: str,
+    owner: Optional[str] = None,
+    *,
+    exclude_cursor: bool = False,
+) -> list:
     out = []
     try:
         from src.settings import get_user_setting, load_settings
@@ -484,7 +533,16 @@ def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) 
     for entry in chain:
         if not isinstance(entry, dict):
             continue
-        resolved = resolve_endpoint_by_id(entry.get("endpoint_id", ""), entry.get("model", ""), owner=owner)
+        ep_id = (entry.get("endpoint_id") or "").strip()
+        if exclude_cursor and ep_id:
+            db = SessionLocal()
+            try:
+                ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
+                if ep and (getattr(ep, "provider", "") or "").strip() == "cursor":
+                    continue
+            finally:
+                db.close()
+        resolved = resolve_endpoint_by_id(ep_id, entry.get("model", ""), owner=owner)
         if resolved:
             out.append(resolved)
     return out

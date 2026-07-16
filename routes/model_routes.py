@@ -11,7 +11,7 @@ import time as _time
 import logging
 import httpx
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Annotated
 from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, Form, Query, Body, Request, Response
 from pydantic import BaseModel
@@ -28,6 +28,20 @@ from src.endpoint_resolver import (
     build_chat_url,
     build_models_url,
     build_headers,
+)
+from src.providers.cursor_adapter import (
+    CURSOR_LOCAL_URL,
+    CURSOR_SDK_AVAILABLE,
+    CURSOR_SDK_MISSING,
+    CursorAdapterError,
+    cached_model_ids,
+    cursor_provider_config,
+    is_cursor_url,
+    list_cursor_model_entries,
+    list_cursor_models,
+    normalize_cached_cursor_models,
+    parse_provider_config,
+    validate_cursor_cwd,
 )
 from src.auth_helpers import _auth_disabled, effective_user, owner_filter
 
@@ -584,6 +598,22 @@ def _is_ollama_base(base_url: str) -> bool:
         return "ollama" in (base_url or "").lower()
 
 
+def _normalize_provider(provider: str | None, base_url: str | None) -> str:
+    raw = (provider or "").strip().lower()
+    if raw == "cursor" or is_cursor_url(base_url):
+        return "cursor"
+    if raw in ("anthropic", "openai_compat"):
+        return raw
+    return "anthropic" if _detect_provider(base_url or "") == "anthropic" else "openai_compat"
+
+
+def _endpoint_base_and_provider(ep) -> tuple[str, str]:
+    provider = _normalize_provider(getattr(ep, "provider", None), getattr(ep, "base_url", ""))
+    base = CURSOR_LOCAL_URL if provider == "cursor" else _normalize_base(ep.base_url)
+    return base, provider
+
+
+
 # Prefixes/substrings for models that are NOT chat-completions-capable
 _NON_CHAT_PREFIXES = (
     "dall-e", "tts-", "whisper", "text-embedding", "embedding",
@@ -691,6 +721,17 @@ def _resolve_probe_key(ep) -> Optional[str]:
 def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 10, with_tools: bool = False) -> dict:
     """Send a realistic completion request to a single model. Returns {status, latency_ms, error?}."""
     provider = _safe_detect_provider(base)
+    if provider == "cursor" or is_cursor_url(base):
+        t0 = _time.time()
+        try:
+            models = list_cursor_models(api_key, timeout=timeout)
+            latency = round((_time.time() - t0) * 1000)
+            if model_id in models:
+                return {"status": "ok", "latency_ms": latency, "note": "Cursor model validated via /v1/models"}
+            return {"status": "fail", "latency_ms": latency, "error": "Model not returned by Cursor /v1/models"}
+        except CursorAdapterError as e:
+            latency = round((_time.time() - t0) * 1000)
+            return {"status": "fail", "latency_ms": latency, "error": str(e)[:120]}
     if _is_discovery_only_provider(provider):
         return {"status": "ok", "latency_ms": 0, "skipped": True}
     messages = [
@@ -781,6 +822,8 @@ def _classify_endpoint(base_url: str, endpoint_kind: str = "auto") -> str:
         return "local"
     if kind in ("api", "proxy"):
         return "api"
+    if is_cursor_url(base_url):
+        return "local"
     try:
         host = urlparse(base_url).hostname or ""
         if host in _LOCAL_HOSTS or _local_ip_literal(host):
@@ -856,6 +899,12 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
     For Anthropic, queries their /v1/models API, falling back to hardcoded list."""
     from src.endpoint_resolver import resolve_url
     from src.llm_core import httpx_get_kimi_aware
+    if is_cursor_url(base_url) or is_cursor_url(_normalize_base(base_url)):
+        try:
+            return list_cursor_models(api_key, timeout=timeout)
+        except CursorAdapterError as e:
+            logger.warning(f"Cursor /v1/models failed: {e}")
+            return []
     base = resolve_url(_normalize_base(base_url))
     provider = _safe_detect_provider(base)
     if provider == "chatgpt-subscription":
@@ -1398,19 +1447,35 @@ def setup_model_routes(model_discovery):
             db.close()
 
         for ep in endpoints:
-            base = _normalize_base(ep.base_url)
-            provider = _safe_detect_provider(base)
+            base, endpoint_provider = _endpoint_base_and_provider(ep)
+            provider = "cursor" if endpoint_provider == "cursor" else _safe_detect_provider(base)
             # Merge cached + pinned models, then filter out hidden ones
             ep_model_type = getattr(ep, "model_type", None) or "llm"
-            model_ids = _visible_models(
-                _cached_model_ids(ep),
-                ep.hidden_models,
-                getattr(ep, "pinned_models", None),
-            )
+            display_by_id: Dict[str, str] = {}
+            if endpoint_provider == "cursor" and ep.cached_models:
+                try:
+                    entries = normalize_cached_cursor_models(json.loads(ep.cached_models))
+                    cursor_ids = [e["id"] for e in entries]
+                    display_by_id = {e["id"]: e["displayName"] for e in entries}
+                except Exception:
+                    cursor_ids = _cached_model_ids(ep)
+                hidden = _hidden_model_ids(ep)
+                model_ids = [m for m in cursor_ids if m not in hidden]
+            else:
+                model_ids = _visible_models(
+                    _cached_model_ids(ep),
+                    ep.hidden_models,
+                    getattr(ep, "pinned_models", None),
+                )
             # Build correct URL based on provider
             chat_url = build_chat_url(base)
             kind = _effective_endpoint_kind(ep, base)
             category = _classify_endpoint(base, kind)
+
+            def _model_display(mid: str) -> str:
+                if mid in display_by_id:
+                    return display_by_id[mid]
+                return _model_display_name(mid)
 
             if model_ids:
                 curated_key = _match_provider_curated(base, None)
@@ -1427,9 +1492,9 @@ def setup_model_routes(model_discovery):
                     "port": 0,
                     "url": chat_url,
                     "models": curated,
-                    "models_display": [_model_display_name(mid) for mid in curated],
+                    "models_display": [_model_display(mid) for mid in curated],
                     "models_extra": extra,
-                    "models_extra_display": [_model_display_name(mid) for mid in extra],
+                    "models_extra_display": [_model_display(mid) for mid in extra],
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,
@@ -1771,7 +1836,10 @@ def setup_model_routes(model_discovery):
     # ---- Admin: model endpoints CRUD ----
 
     @router.get("/model-endpoints")
-    def list_model_endpoints(request: Request) -> List[Dict[str, Any]]:
+    def list_model_endpoints(
+        request: Request,
+        include_meta: Annotated[bool, Query()] = False,
+    ):
         require_admin(request)
         db = SessionLocal()
         try:
@@ -1780,18 +1848,40 @@ def setup_model_routes(model_discovery):
             rows = db.query(ModelEndpoint).order_by(ModelEndpoint.created_at).all()
             results = []
             for r in rows:
+                prov = _normalize_provider(getattr(r, "provider", None), r.base_url)
                 all_models = _cached_model_ids(r)
+                raw = None
+                if prov == "cursor" and r.cached_models:
+                    try:
+                        raw = json.loads(r.cached_models)
+                        all_models = normalize_cached_cursor_models(raw)
+                    except Exception:
+                        pass
                 hidden = _hidden_model_ids(r)
                 pinned = _normalize_model_ids(getattr(r, "pinned_models", None))
-                visible = _visible_models(all_models, r.hidden_models, pinned)
+                visibility_src = (
+                    cached_model_ids(raw) if prov == "cursor" and raw is not None else all_models
+                )
+                visible = _visible_models(visibility_src, getattr(r, 'hidden_models', None), pinned)
+                display_by_id = {}
+                if prov == "cursor" and isinstance(all_models, list):
+                    for m in all_models:
+                        mid = m.get("id") if isinstance(m, dict) else str(m)
+                        display_by_id[mid] = (
+                            m.get("displayName") if isinstance(m, dict) else str(m)
+                        )
+                models_display = [display_by_id.get(mid, mid) for mid in visible] if display_by_id else visible
                 # Keep the list route cache-only. It feeds Settings →
                 # Added Models and must render immediately; explicit
                 # Refresh/Probe endpoints do the network work.
                 status = "online" if (all_models or pinned) else ("empty" if r.is_enabled else "offline")
                 ping = None
-                base = _normalize_base(r.base_url)
+                cursor_sdk_missing = prov == "cursor" and not CURSOR_SDK_AVAILABLE
+                if cursor_sdk_missing and all_models:
+                    status = "sdk_missing"
+                base = CURSOR_LOCAL_URL if prov == "cursor" else _normalize_base(r.base_url)
                 kind = _effective_endpoint_kind(r, base)
-                results.append({
+                entry = {
                     "id": r.id,
                     "name": r.name,
                     "base_url": r.base_url,
@@ -1799,19 +1889,33 @@ def setup_model_routes(model_discovery):
                     "api_key_fingerprint": _api_key_fingerprint(r.api_key),
                     "is_enabled": r.is_enabled,
                     "models": visible,
+                    "models_display": models_display,
                     "pinned_models": pinned,
                     "hidden_count": len(hidden),
-                    "online": status != "offline",
+                    "online": status not in ("offline", "sdk_missing"),
                     "status": status,
                     "ping_error": (ping or {}).get("error") if ping else None,
                     "model_type": getattr(r, "model_type", None) or "llm",
                     "supports_tools": getattr(r, "supports_tools", None),
+                    "provider": prov,
+                    "provider_config": getattr(r, "provider_config", None),
                     "endpoint_kind": kind,
                     "category": _classify_endpoint(base, kind),
                     "model_refresh_mode": _endpoint_refresh_mode(r, kind),
                     "model_refresh_interval": getattr(r, "model_refresh_interval", None),
                     "model_refresh_timeout": getattr(r, "model_refresh_timeout", None),
-                })
+                }
+                if cursor_sdk_missing:
+                    entry["cursor_sdk_missing"] = True
+                results.append(entry)
+            if include_meta:
+                return {
+                    "endpoints": results,
+                    "meta": {
+                        "cursor_sdk_available": CURSOR_SDK_AVAILABLE,
+                        "cursor_install_hint": CURSOR_SDK_MISSING,
+                    },
+                }
             return results
         finally:
             db.close()
@@ -1830,6 +1934,9 @@ def setup_model_routes(model_discovery):
         model_refresh_interval: str = Form(""),
         model_refresh_timeout: str = Form(""),
         supports_tools: str = Form(""),  # "true"/"false"/"" (unknown)
+        provider: str = Form(""),
+        provider_config: str = Form(""),
+        cursor_cwd: str = Form(""),
         pinned_models: str = Form(""),  # admin-pinned IDs: list/JSON/comma/newline
         container_local: str = Form("false"),
         # Default `shared=true` → endpoints are visible to all users (the
@@ -1838,28 +1945,65 @@ def setup_model_routes(model_discovery):
         shared: str = Form("true"),
     ):
         require_admin(request)
-        base_url = _normalize_base(base_url)
+        # Direct unit-test calls bypass FastAPI form parsing and may pass Form()
+        # sentinel objects for omitted kwargs — coerce those to empty strings.
+        if not isinstance(provider, str):
+            provider = ""
+        if not isinstance(provider_config, str):
+            provider_config = ""
+        if not isinstance(cursor_cwd, str):
+            cursor_cwd = ""
+        base_url = (base_url or "").strip().rstrip("/")
+        endpoint_provider = _normalize_provider(provider, base_url)
+        provider_config_value = (provider_config or "").strip()
+        normalized_model_type = (model_type.strip() if model_type else "llm") or "llm"
+        if endpoint_provider == "cursor":
+            if not CURSOR_SDK_AVAILABLE:
+                raise HTTPException(503, CURSOR_SDK_MISSING)
+            base_url = CURSOR_LOCAL_URL
+            if normalized_model_type != "llm":
+                raise HTTPException(400, "Cursor endpoints only support LLM model_type")
+            if not api_key.strip():
+                raise HTTPException(400, "Cursor API key is required")
+            cursor_config = parse_provider_config(provider_config_value)
+            cursor_cwd_value = str(cursor_config.get("cwd") or cursor_cwd.strip() or "")
+            try:
+                cursor_workspace = validate_cursor_cwd(cursor_cwd_value or None)
+            except CursorAdapterError as e:
+                raise HTTPException(e.status, str(e))
+            provider_config_value = cursor_provider_config(cursor_workspace)
+            normalized_model_type = "llm"
+        else:
+            base_url = _normalize_base(base_url)
+            if not base_url:
+                raise HTTPException(400, "Base URL is required")
+            # Resolve hostname via Tailscale if DNS fails
+            from src.endpoint_resolver import resolve_url
+            base_url = resolve_url(base_url)
+            # In Docker, manually added loopback URLs usually point at a host-local
+            # server. Cookbook local serves are launched inside Odysseus itself, so
+            # keep those container-local when the frontend marks them as such.
+            base_url = _rewrite_loopback_for_docker(base_url, container_local=_truthy(container_local))
+
         if not base_url:
             raise HTTPException(400, "Base URL is required")
-        # Resolve hostname via Tailscale if DNS fails
-        from src.endpoint_resolver import resolve_url
-        base_url = resolve_url(base_url)
-        # In Docker, manually added loopback URLs usually point at a host-local
-        # server. Cookbook local serves are launched inside Odysseus itself, so
-        # keep those container-local when the frontend marks them as such.
-        base_url = _rewrite_loopback_for_docker(base_url, container_local=_truthy(container_local))
 
         # Auto-generate name from URL if not provided
         if not name.strip():
-            name = base_url.replace("http://", "").replace("https://", "").split("/")[0]
+            name = "Cursor (local)" if endpoint_provider == "cursor" else base_url.replace("http://", "").replace("https://", "").split("/")[0]
 
         requested_kind = _normalize_endpoint_kind(endpoint_kind)
+        if endpoint_provider == "cursor":
+            requested_kind = "local"
         refresh_mode = _normalize_refresh_mode(model_refresh_mode, requested_kind)
         refresh_interval = _parse_positive_int(model_refresh_interval, minimum=30, maximum=86400)
         refresh_timeout = _parse_positive_int(model_refresh_timeout, minimum=1, maximum=60)
         require_model_list = _truthy(require_models)
         should_probe = (
-            require_model_list or requested_kind in ("api", "proxy") or not _truthy(skip_probe)
+            endpoint_provider == "cursor"
+            or require_model_list
+            or requested_kind in ("api", "proxy")
+            or not _truthy(skip_probe)
         )
         explicit_timeout = _explicit_model_list_timeout(base_url, requested_kind, refresh_timeout)
 
@@ -1962,10 +2106,18 @@ def setup_model_routes(model_discovery):
         finally:
             _db_dedup.close()
 
-        model_ids = _probe_endpoint(base_url, api_key.strip() or None, timeout=explicit_timeout) if should_probe else []
         ping = {"reachable": False, "error": None}
-        if (should_probe or requested_kind in ("api", "proxy")) and not model_ids:
-            ping = _ping_endpoint(base_url, api_key.strip() or None, timeout=min(explicit_timeout, 10.0))
+        entries: list = []
+        if endpoint_provider == "cursor":
+            try:
+                entries = list_cursor_model_entries(api_key.strip(), timeout=5) if should_probe else []
+                model_ids = [e["id"] for e in entries]
+            except CursorAdapterError as e:
+                raise HTTPException(e.status, str(e))
+        else:
+            model_ids = _probe_endpoint(base_url, api_key.strip() or None, timeout=explicit_timeout) if should_probe else []
+            if (should_probe or requested_kind in ("api", "proxy")) and not model_ids:
+                ping = _ping_endpoint(base_url, api_key.strip() or None, timeout=min(explicit_timeout, 10.0))
         if require_model_list and not model_ids:
             raise HTTPException(400, _model_endpoint_error_message(base_url, ping))
 
@@ -1988,15 +2140,18 @@ def setup_model_routes(model_discovery):
                 base_url=base_url,
                 api_key=api_key.strip() or None,
                 is_enabled=True,
-                model_type=model_type.strip() if model_type else "llm",
+                model_type=normalized_model_type,
                 endpoint_kind=requested_kind,
                 model_refresh_mode=refresh_mode,
                 model_refresh_interval=refresh_interval,
                 model_refresh_timeout=refresh_timeout,
-                cached_models=json.dumps(model_ids) if model_ids else None,
+                cached_models=json.dumps(entries if endpoint_provider == "cursor" else model_ids)
+                if (entries if endpoint_provider == "cursor" else model_ids) else None,
                 pinned_models=json.dumps(_pinned) if _pinned else None,
-                supports_tools=_st,
+                supports_tools=False if endpoint_provider == "cursor" else _st,
                 owner=_owner_val,
+                provider=endpoint_provider,
+                provider_config=provider_config_value or None,
             )
             db.add(ep)
             db.commit()
@@ -2047,6 +2202,9 @@ def setup_model_routes(model_discovery):
             "ping_error": ping.get("error") if ping else None,
             "endpoint_kind": requested_kind,
             "category": _classify_endpoint(base_url, requested_kind),
+            "supports_tools": False if endpoint_provider == "cursor" else _st,
+            "provider": endpoint_provider,
+            "provider_config": provider_config_value or None,
         }
 
     @router.post("/model-endpoints/test")

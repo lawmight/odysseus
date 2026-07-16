@@ -1269,6 +1269,11 @@ async def _shutdown_event():
         await mcp_manager.disconnect_all()
     except Exception as e:
         logger.warning(f"MCP shutdown error: {e}")
+    try:
+        from src.providers.cursor_adapter import close_cursor_bridges
+        await close_cursor_bridges()
+    except Exception as e:
+        logger.warning(f"Cursor bridge shutdown error: {e}")
     logger.info("Application shutdown complete")
 
 

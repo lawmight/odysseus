@@ -1011,6 +1011,33 @@ def clean_thinking_for_save(content: str, metadata: dict | None = None) -> tuple
     return content, md
 
 
+
+_CHAT_IMAGE_TOOL_META_KEYS = (
+    "image_url",
+    "image_id",
+    "image_prompt",
+    "image_model",
+    "image_size",
+    "image_quality",
+)
+
+
+def tool_event_from_chat_tool_output(data: dict) -> Optional[dict]:
+    """Build a session-history tool_events entry from a Chat SSE tool_output payload."""
+    if not isinstance(data, dict) or data.get("type") != "tool_output":
+        return None
+    ev: dict = {
+        "round": 1,
+        "tool": data.get("tool") or "generate_image",
+        "command": str(data.get("command") or "")[:200],
+        "output": data.get("output", ""),
+        "exit_code": 0 if data.get("exit_code") in (None, 0) else int(data.get("exit_code")),
+    }
+    for key in _CHAT_IMAGE_TOOL_META_KEYS:
+        if data.get(key):
+            ev[key] = data[key]
+    return ev
+
 def save_assistant_response(
     sess,
     session_manager,

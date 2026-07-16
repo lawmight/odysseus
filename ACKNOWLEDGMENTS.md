@@ -77,6 +77,14 @@ Referenced from `cdn.jsdelivr.net` / `cdnjs.cloudflare.com` at runtime — not v
 | [Pyodide](https://github.com/pyodide/pyodide) 0.27.5 | In-browser Python runtime | MPL-2.0 |
 | [PDFObject](https://github.com/pipwerks/PDFObject) 2.1.1 | Inline PDF embedding | MIT |
 
+## Optional Python dependencies
+
+Installed via `requirements-cursor.txt` when using Cursor as a Chat provider:
+
+| Package | Purpose | License |
+|---|---|---|
+| [cursor-sdk](https://pypi.org/project/cursor-sdk/) | Cursor local bridge + Chat streaming | See package metadata on PyPI |
+
 ## Fonts
 
 Bundled in `static/fonts/`:
