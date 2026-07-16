@@ -70,7 +70,7 @@ Zero standing infrastructure, no spend limits, no credentials parked in a schedu
 
 ### Standing option: GitHub Actions cron
 
-The happy path (`fetch` + ancestor check, usually "no new commits") is deterministic and needs no LLM. A scheduled workflow that runs `refresh-upstream-cursor-branch.sh --target main` daily and fails the job on exit 2 (conflicts) or exit 3 (conformance) covers it for free; escalate to an agent only when the job fails. The scripts need no changes to support this.
+The happy path (`fetch` + ancestor check, usually "no new commits") is deterministic and needs no LLM. Workflow [`.github/workflows/refresh-upstream-cursor-branch.yml`](../../.github/workflows/refresh-upstream-cursor-branch.yml) runs daily at **08:00 UTC** for both `--target main` and `--target dev`, and fails the job on exit 2 (conflicts) or exit 3 (conformance) so you can escalate to an agent. Manual run: **Actions → Refresh upstream Cursor branch → Run workflow**. Default `GITHUB_TOKEN` (`contents: write`) is enough for unprotected `cursor/upstream-cursor-provider-*` branches; if those branches are protected, add a PAT with repo write (see the workflow comment).
 
 ### Alternative: scheduled Cursor Automation
 
