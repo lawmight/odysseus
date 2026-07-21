@@ -1,5 +1,4 @@
 {
-  "snapshot": "snapshot-20260605-a39d2265-e659-42ae-a9e6-3c31f51cd1e8",
   "install": "bash scripts/cloud-agent-install.sh",
   "start": "bash scripts/cloud-agent-start.sh start",
   "ports": [
@@ -13,5 +12,6 @@
       "name": "odysseus",
       "command": "bash scripts/cloud-agent-start.sh terminal"
     }
-  ]
+  ],
+  "agentCanUpdateSnapshot": true
 }

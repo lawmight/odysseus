@@ -20,10 +20,10 @@ Quick reference for agents on a prepared Cloud VM (after the `install` / update 
 
 | Value | Behavior |
 |-------|----------|
-| `docker` (default) | `start` runs full Compose stack on port **7000** |
-| `dev` | `start` brings up sidecars only; the **odysseus** terminal runs host `uvicorn` |
+| `dev` (default) | `start` brings up sidecars only; the **odysseus** terminal runs host `uvicorn` |
+| `docker` | `start` runs full Compose stack on port **7000** (waits on SearXNG health; slower / flakier on nested Docker) |
 
-Optional: `ODYSSEUS_DOCKER_BUILD=1` with `docker` mode runs `docker compose up -d --build` on boot (slower; use when images are stale).
+Optional: `ODYSSEUS_DOCKER_BUILD=1` with `docker` mode runs `docker compose up -d --build` on boot (slower; use when images are stale). Prefer `dev` for Long-running Cloud Agents.
 
 **UI:** `http://127.0.0.1:7000`. First-boot admin password is printed by `setup.py` (or in `docker compose logs odysseus` for Compose). User `admin` unless `ODYSSEUS_ADMIN_USER` is set. Rebuild/restart the `odysseus` container after changing Python deps in Compose mode.
 
@@ -142,10 +142,11 @@ Cursor runs the **`install`** command from [`.cursor/environment.json`](.cursor/
 That script (idempotent):
 
 - Creates/uses `venv`
-- Installs `requirements.txt` and `requirements-optional.txt`
+- Installs `requirements.txt` and `requirements-optional.txt` (warm-skips when `venv/.odysseus-install-stamp` matches)
 - Installs **`requirements-cursor.txt`** (`cursor-sdk`) when a Cloud Agent env is detected (`CLOUD_AGENT_ALL_SECRET_NAMES`, `CURSOR_API_KEY`) or when `ODYSSEUS_INSTALL_CURSOR=1`
 - Runs `npm install` if Node is present
 - Runs `python setup.py` once if `data/auth.json` is missing (temp admin password printed to install logs)
+- Force a full refresh with `ODYSSEUS_FORCE_INSTALL=1`
 
 You do **not** need to hand-run `pip install -r requirements-cursor.txt` if `install` already installed cursor-sdk — check:
 
@@ -157,10 +158,27 @@ To change bootstrap behavior, edit `scripts/cloud-agent-install.sh` and commit; 
 
 **`start`** / **`terminals`** in `environment.json` call `scripts/cloud-agent-start.sh`, which reads **`ODYSSEUS_RUNTIME`**:
 
-- **`docker`** (default): full Compose stack (`docker compose up -d`; add `ODYSSEUS_DOCKER_BUILD=1` to rebuild).
-- **`dev`**: sidecars via `cloud-agent-services.sh start`; the **odysseus** terminal runs `dev-server` (host uvicorn).
+- **`dev`** (default): sidecars via `cloud-agent-services.sh start`; the **odysseus** terminal runs `dev-server` (host uvicorn). Stops a leftover Compose `odysseus` container if it holds port 7000.
+- **`docker`**: full Compose stack (`docker compose up -d`; add `ODYSSEUS_DOCKER_BUILD=1` to rebuild). Soft-falls back to sidecars if Docker/compose fails or hits `ODYSSEUS_COMPOSE_TIMEOUT` (default 180s).
 
 Set `ODYSSEUS_RUNTIME` in the Cloud environment dashboard so you do not edit JSON when switching modes.
+
+### Long-running Cloud Agents (why launches feel stuck)
+
+Cursor’s **Long-running** harness ([cursor.com/agents](https://cursor.com/agents) → model picker → Long-running) uses the same `.cursor/environment.json` hooks. Common launch pain on this repo:
+
+1. **Stale / unused snapshot** — do **not** pin an old `snapshot` ID in `environment.json` unless you just saved it from the dashboard. A bad pin falls back to just-in-time boots (`build: null`) and re-runs heavy `install`. After a good agent run: Cloud Agents → Environments → save a new snapshot, then commit the new `snapshot` id (optional; `agentCanUpdateSnapshot` is enabled).
+2. **`ODYSSEUS_RUNTIME=docker`** — full Compose waits on SearXNG health before starting `odysseus` (can sit ~2 minutes, then fail). Keep dashboard secret `ODYSSEUS_RUNTIME=dev` for Long-running work.
+3. **Port 7000 fight** — leftover `workspace-odysseus-1` from a docker-mode boot blocks host uvicorn; `dev-server` now stops that container first.
+4. **Empty chat after green setup** — if setup logs show `[START] Exit code: 0` / sidecars up but the agent never sends a first message, that is a Cursor platform attach failure (cancel + retry). Not fixed by repo scripts.
+
+Verify a launch locally on the VM:
+
+```bash
+bash scripts/cloud-agent-install.sh   # expect warm skip on second run
+ODYSSEUS_RUNTIME=dev bash scripts/cloud-agent-start.sh start
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7000/api/auth/status
+```
 
 ---
 

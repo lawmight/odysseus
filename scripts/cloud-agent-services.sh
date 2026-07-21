@@ -58,6 +58,16 @@ case "$cmd" in
     # APP_BIND=127.0.0.1 if you need loopback-only on a shared host.
     _bind="${APP_BIND:-0.0.0.0}"
     _port="${APP_PORT:-7000}"
+    # Leftover Compose `odysseus` from a prior ODYSSEUS_RUNTIME=docker boot steals
+    # :7000 and makes the host uvicorn terminal exit immediately — Long-running
+    # agents then look "stuck" with no UI. Stop only the app container; keep sidecars.
+    _detect_docker
+    if $DOCKER info >/dev/null 2>&1; then
+      if $DOCKER compose ps --status running odysseus 2>/dev/null | grep -q odysseus; then
+        echo "cloud-agent-services: stopping Compose odysseus so host uvicorn can bind :${_port}"
+        $DOCKER compose stop odysseus >/dev/null || true
+      fi
+    fi
     exec uvicorn app:app --host "$_bind" --port "$_port"
     ;;
   *)

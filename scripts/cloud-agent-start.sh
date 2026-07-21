@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Cloud Agent startup: ODYSSEUS_RUNTIME=docker (default) | dev
+# Cloud Agent startup: ODYSSEUS_RUNTIME=dev (default) | docker
+# Default is host uvicorn + sidecars. Full Compose (including the odysseus
+# app container) is opt-in via ODYSSEUS_RUNTIME=docker — that path waits on
+# SearXNG healthchecks and is a common source of slow/failed Long-running
+# agent launches when nested Docker is flaky.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-RUNTIME="${ODYSSEUS_RUNTIME:-docker}"
+RUNTIME="${ODYSSEUS_RUNTIME:-dev}"
 RUNTIME="${RUNTIME,,}"
 
 DOCKER="docker"
@@ -31,12 +35,29 @@ _start_dockerd() {
   fi
 }
 
+_compose_up() {
+  # Cap wait so a stuck SearXNG healthcheck cannot block agent launch forever
+  # (compose waits on depends_on: service_healthy before starting odysseus).
+  local -a args=("$@")
+  local timeout_s="${ODYSSEUS_COMPOSE_TIMEOUT:-180}"
+  if command -v timeout >/dev/null 2>&1; then
+    # timeout(1) returns 124 on expiry; treat that as a soft failure.
+    if ! timeout "$timeout_s" $DOCKER "${args[@]}"; then
+      local rc=$?
+      echo "cloud-agent-start: docker compose timed out or failed (exit $rc, limit ${timeout_s}s)" >&2
+      return "$rc"
+    fi
+    return 0
+  fi
+  $DOCKER "${args[@]}"
+}
+
 _cmd_start_docker() {
   _start_dockerd || true
   _detect_docker
   if ! $DOCKER info >/dev/null 2>&1; then
-    echo "Docker unavailable — set ODYSSEUS_RUNTIME=dev for host uvicorn without sidecars." >&2
-    exit 1
+    echo "Docker unavailable — falling back to sidecars-only start (set ODYSSEUS_RUNTIME=dev explicitly)." >&2
+    exec bash "$ROOT/scripts/cloud-agent-services.sh" start
   fi
   _compose_args=(compose up -d)
   if [[ "${ODYSSEUS_DOCKER_BUILD:-}" =~ ^(1|true|yes|on)$ ]]; then
@@ -45,7 +66,12 @@ _cmd_start_docker() {
   else
     echo "cloud-agent-start: docker compose up -d (set ODYSSEUS_DOCKER_BUILD=1 to rebuild images)"
   fi
-  $DOCKER "${_compose_args[@]}"
+  if ! _compose_up "${_compose_args[@]}"; then
+    echo "cloud-agent-start: full Compose failed — falling back to sidecars only." >&2
+    $DOCKER compose up -d chromadb searxng ntfy || true
+    echo "Sidecars attempted; use ODYSSEUS_RUNTIME=dev + host uvicorn if the app is down."
+    return 0
+  fi
 }
 
 _cmd_start_dev() {
@@ -86,8 +112,9 @@ case "$cmd" in
     ;;
   *)
     echo "Usage: $0 {start|terminal}" >&2
-    echo "  ODYSSEUS_RUNTIME=docker|dev  (default: docker)" >&2
+    echo "  ODYSSEUS_RUNTIME=dev|docker  (default: dev)" >&2
     echo "  ODYSSEUS_DOCKER_BUILD=1      rebuild images when runtime=docker" >&2
+    echo "  ODYSSEUS_COMPOSE_TIMEOUT=180 max seconds for docker compose up" >&2
     exit 1
     ;;
 esac
