@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared Docker bootstrap for Cloud Agent install/start.
 # Nested Docker on Cursor VMs often needs: dockerd running, fuse-overlayfs,
-# iptables-legacy, and sudo (ubuntu is frequently not in the docker group).
+# iptables-legacy, Compose v2 plugin, and sudo (ubuntu is frequently not in
+# the docker group).
 #
 # Source this file; do not exec it.
 # shellcheck shell=bash
@@ -25,6 +26,48 @@ _odysseus_detect_docker() {
   return 1
 }
 
+_odysseus_compose_available() {
+  # Prefer Compose V2 plugin (`docker compose`). docker.io without
+  # docker-compose-v2 makes `docker compose up -d` fail with exit 125
+  # ("unknown shorthand flag: 'd'") and aborts Cloud Agent start under set -e.
+  if command -v docker >/dev/null 2>&1; then
+    if docker compose version >/dev/null 2>&1; then
+      return 0
+    fi
+    if sudo docker compose version >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+# Run Compose against the repo. Usage: _odysseus_compose up -d chromadb …
+# Soft-fails (returns non-zero) but never traps the caller unless they check.
+_odysseus_compose() {
+  if ! _odysseus_detect_docker; then
+    return 1
+  fi
+  if docker compose version >/dev/null 2>&1 \
+    || sudo docker compose version >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    $ODYSSEUS_DOCKER compose "$@"
+    return $?
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    if [[ "$ODYSSEUS_DOCKER" == "sudo docker" ]]; then
+      sudo docker-compose "$@"
+    else
+      docker-compose "$@"
+    fi
+    return $?
+  fi
+  echo "cloud-agent-docker: Compose v2 plugin missing (install docker-compose-v2)" >&2
+  return 1
+}
+
 _odysseus_configure_nested_docker() {
   # Best-effort nested-Docker knobs from Cursor's cloud-agent Docker docs.
   if command -v fuse-overlayfs >/dev/null 2>&1; then
@@ -44,21 +87,43 @@ _odysseus_configure_nested_docker() {
   fi
 }
 
-_odysseus_install_docker_packages() {
-  if command -v docker >/dev/null 2>&1 && command -v dockerd >/dev/null 2>&1; then
+_odysseus_install_compose_plugin() {
+  if _odysseus_compose_available; then
     return 0
   fi
   if ! command -v apt-get >/dev/null 2>&1; then
+    return 1
+  fi
+  echo "cloud-agent-docker: installing Compose v2 plugin…"
+  sudo apt-get update -qq || true
+  # docker.io → docker-compose-v2; docker-ce → docker-compose-plugin
+  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-compose-v2; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-compose-plugin || true
+  fi
+  _odysseus_compose_available
+}
+
+_odysseus_install_docker_packages() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    if command -v docker >/dev/null 2>&1 && command -v dockerd >/dev/null 2>&1; then
+      return 0
+    fi
     echo "cloud-agent-docker: docker/dockerd missing and apt-get unavailable" >&2
     return 1
   fi
-  echo "cloud-agent-docker: installing docker.io + fuse-overlayfs (needed for Chroma/SearXNG sidecars)…"
-  sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    docker.io fuse-overlayfs iptables || {
-    echo "cloud-agent-docker: apt install docker.io failed" >&2
-    return 1
-  }
+
+  if ! command -v docker >/dev/null 2>&1 || ! command -v dockerd >/dev/null 2>&1; then
+    echo "cloud-agent-docker: installing docker.io + fuse-overlayfs (needed for Chroma/SearXNG sidecars)…"
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      docker.io fuse-overlayfs iptables || {
+      echo "cloud-agent-docker: apt install docker.io failed" >&2
+      return 1
+    }
+  fi
+
+  # Separate from docker.io so a missing compose package name never blocks dockerd.
+  _odysseus_install_compose_plugin || true
   return 0
 }
 
@@ -103,6 +168,9 @@ _odysseus_ensure_docker() {
   _odysseus_install_docker_packages || true
   _odysseus_configure_nested_docker || true
   if _odysseus_start_dockerd && _odysseus_detect_docker; then
+    if ! _odysseus_compose_available; then
+      echo "cloud-agent-docker: warning — docker is up but Compose v2 is missing" >&2
+    fi
     return 0
   fi
   _odysseus_detect_docker || true

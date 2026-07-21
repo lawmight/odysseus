@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Helper for Cloud Agent terminals: Docker sidecars + optional uvicorn.
+# Start must exit 0 even when sidecars fail — a non-zero start exit makes
+# Cursor mark the Cloud Agent as ERROR before chat can begin.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,9 +15,12 @@ cmd="${1:-}"
 case "$cmd" in
   start)
     if _odysseus_ensure_docker; then
-      # shellcheck disable=SC2086
-      $ODYSSEUS_DOCKER compose up -d chromadb searxng ntfy
-      echo "Sidecars up (Chroma 8100, SearXNG 8080, ntfy 8091)."
+      if _odysseus_compose up -d chromadb searxng ntfy; then
+        echo "Sidecars up (Chroma 8100, SearXNG 8080, ntfy 8091)."
+      else
+        echo "cloud-agent-services: notice — Compose sidecar start failed; continuing without them."
+        echo "cloud-agent-services: Odysseus Chat/Agent still work; vector memory / web search stay degraded."
+      fi
     else
       echo "cloud-agent-services: notice — Docker not ready; continuing without Chroma/SearXNG sidecars."
       echo "cloud-agent-services: Odysseus Chat/Agent still work; vector memory and web search stay degraded until Docker is available."
@@ -43,11 +48,9 @@ case "$cmd" in
     # :7000 and makes the host uvicorn terminal exit immediately — Long-running
     # agents then look "stuck" with no UI. Stop only the app container; keep sidecars.
     if _odysseus_detect_docker; then
-      # shellcheck disable=SC2086
-      if $ODYSSEUS_DOCKER compose ps --status running odysseus 2>/dev/null | grep -q odysseus; then
+      if _odysseus_compose ps --status running odysseus 2>/dev/null | grep -q odysseus; then
         echo "cloud-agent-services: stopping Compose odysseus so host uvicorn can bind :${_port}"
-        # shellcheck disable=SC2086
-        $ODYSSEUS_DOCKER compose stop odysseus >/dev/null || true
+        _odysseus_compose stop odysseus >/dev/null || true
       fi
     fi
     exec uvicorn app:app --host "$_bind" --port "$_port"

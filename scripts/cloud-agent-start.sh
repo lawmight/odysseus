@@ -18,20 +18,24 @@ RUNTIME="${RUNTIME,,}"
 _compose_up() {
   # Cap wait so a stuck SearXNG healthcheck cannot block agent launch forever
   # (compose waits on depends_on: service_healthy before starting odysseus).
+  # Args are Compose subcommands only (e.g. up -d), not "compose …" — the helper
+  # already inserts `compose` / falls back to docker-compose.
   local -a args=("$@")
   local timeout_s="${ODYSSEUS_COMPOSE_TIMEOUT:-180}"
   if command -v timeout >/dev/null 2>&1; then
+    # timeout(1) spawns a child shell; export helpers so _odysseus_compose works.
+    export ODYSSEUS_DOCKER
+    export -f _odysseus_compose _odysseus_detect_docker \
+      _odysseus_compose_available _odysseus_docker_info_ok
     # timeout(1) returns 124 on expiry; treat that as a soft failure.
-    # shellcheck disable=SC2086
-    if ! timeout "$timeout_s" $ODYSSEUS_DOCKER "${args[@]}"; then
+    if ! timeout "$timeout_s" bash -c '_odysseus_compose "$@"' _ "${args[@]}"; then
       local rc=$?
       echo "cloud-agent-start: docker compose timed out or failed (exit $rc, limit ${timeout_s}s)" >&2
       return "$rc"
     fi
     return 0
   fi
-  # shellcheck disable=SC2086
-  $ODYSSEUS_DOCKER "${args[@]}"
+  _odysseus_compose "${args[@]}"
 }
 
 _cmd_start_docker() {
@@ -39,7 +43,7 @@ _cmd_start_docker() {
     echo "cloud-agent-start: Docker not ready — falling back to sidecars-only start." >&2
     exec bash "$ROOT/scripts/cloud-agent-services.sh" start
   fi
-  _compose_args=(compose up -d)
+  _compose_args=(up -d)
   if [[ "${ODYSSEUS_DOCKER_BUILD:-}" =~ ^(1|true|yes|on)$ ]]; then
     _compose_args+=(--build)
     echo "cloud-agent-start: docker compose up -d --build (ODYSSEUS_DOCKER_BUILD set)"
@@ -48,8 +52,7 @@ _cmd_start_docker() {
   fi
   if ! _compose_up "${_compose_args[@]}"; then
     echo "cloud-agent-start: full Compose failed — falling back to sidecars only." >&2
-    # shellcheck disable=SC2086
-    $ODYSSEUS_DOCKER compose up -d chromadb searxng ntfy || true
+    _odysseus_compose up -d chromadb searxng ntfy || true
     echo "Sidecars attempted; use ODYSSEUS_RUNTIME=dev + host uvicorn if the app is down."
     return 0
   fi
