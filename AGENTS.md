@@ -27,7 +27,7 @@ Optional: `ODYSSEUS_DOCKER_BUILD=1` with `docker` mode runs `docker compose up -
 
 **UI:** `http://127.0.0.1:7000`. First-boot admin password is printed by `setup.py` (or in `docker compose logs odysseus` for Compose). User `admin` unless `ODYSSEUS_ADMIN_USER` is set. Rebuild/restart the `odysseus` container after changing Python deps in Compose mode.
 
-**Docker on Cloud VMs:** Nested Docker needs `fuse-overlayfs` and `iptables-legacy` ([Cursor setup — Running Docker](https://cursor.com/docs/cloud-agent/setup#running-docker)). Verify with `sudo docker run --rm hello-world`. The daemon may not start via systemd — use `sudo sh -c 'dockerd >/tmp/dockerd.log 2>&1 &'` and wait for `sudo docker info`. Use `sudo docker` / `sudo docker compose` if `/var/run/docker.sock` is permission-denied. Logs should show `storage-driver=fuse-overlayfs` and `ChromaDB connected`.
+**Docker on Cloud VMs:** Nested Docker needs `fuse-overlayfs` and `iptables-legacy` ([Cursor setup — Running Docker](https://cursor.com/docs/cloud-agent/setup#running-docker)). `scripts/cloud-agent-docker.sh` (sourced by install/start) installs `docker.io` when missing, configures fuse-overlayfs, starts `dockerd`, and prefers `sudo docker` when the user is not in the `docker` group. Verify with `sudo docker run --rm hello-world`. Logs should show `storage-driver=fuse-overlayfs` and `ChromaDB connected`. A notice that sidecars are skipped is **non-fatal** — Chat/Agent still run; only vector memory / SearXNG stay degraded.
 
 **Port forwarding:** Dev server binds `0.0.0.0:7000` by default (`scripts/cloud-agent-services.sh dev-server`). After VPN/routing changes, re-forward port 7000 in Cursor if the browser shows `ERR_EMPTY_RESPONSE`.
 
@@ -169,8 +169,9 @@ Cursor’s **Long-running** harness ([cursor.com/agents](https://cursor.com/agen
 
 1. **Stale / unused snapshot** — do **not** pin an old `snapshot` ID in `environment.json` unless you just saved it from the dashboard. A bad pin falls back to just-in-time boots (`build: null`) and re-runs heavy `install`. After a good agent run: Cloud Agents → Environments → save a new snapshot, then commit the new `snapshot` id (optional; `agentCanUpdateSnapshot` is enabled).
 2. **`ODYSSEUS_RUNTIME=docker`** — full Compose waits on SearXNG health before starting `odysseus` (can sit ~2 minutes, then fail). Keep dashboard secret `ODYSSEUS_RUNTIME=dev` for Long-running work.
-3. **Port 7000 fight** — leftover `workspace-odysseus-1` from a docker-mode boot blocks host uvicorn; `dev-server` now stops that container first.
-4. **Empty chat after green setup** — if setup logs show `[START] Exit code: 0` / sidecars up but the agent never sends a first message, that is a Cursor platform attach failure (cancel + retry). Not fixed by repo scripts.
+3. **Docker missing on JIT VMs** — without a saved snapshot, some pods have no `dockerd`. Install/start now apt-install `docker.io` + start the daemon. Plugin-cache `ENOENT` / noVNC `Press Ctrl-C to exit` lines in setup logs are Cursor platform noise, not Odysseus failures.
+4. **Port 7000 fight** — leftover `workspace-odysseus-1` from a docker-mode boot blocks host uvicorn; `dev-server` now stops that container first.
+5. **Empty chat after green setup** — if setup logs show `[START] Exit code: 0` but the agent never sends a first message (status `ERROR`, empty transcript), that is a Cursor platform attach failure (cancel + retry). Not fixed by repo scripts.
 
 Verify a launch locally on the VM:
 

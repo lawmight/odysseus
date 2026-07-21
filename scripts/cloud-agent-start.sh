@@ -9,31 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# shellcheck disable=SC1091
+source "$ROOT/scripts/cloud-agent-docker.sh"
+
 RUNTIME="${ODYSSEUS_RUNTIME:-dev}"
 RUNTIME="${RUNTIME,,}"
-
-DOCKER="docker"
-
-_detect_docker() {
-  DOCKER="docker"
-  if ! docker info >/dev/null 2>&1; then
-    if sudo docker info >/dev/null 2>&1; then
-      DOCKER="sudo docker"
-    fi
-  fi
-}
-
-_start_dockerd() {
-  sudo service docker start 2>/dev/null || true
-  if docker info >/dev/null 2>&1 || sudo docker info >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v dockerd >/dev/null 2>&1; then
-    echo "Starting dockerd (may need sudo)…"
-    sudo sh -c 'dockerd >/tmp/dockerd.log 2>&1 &'
-    sleep 3
-  fi
-}
 
 _compose_up() {
   # Cap wait so a stuck SearXNG healthcheck cannot block agent launch forever
@@ -42,21 +22,21 @@ _compose_up() {
   local timeout_s="${ODYSSEUS_COMPOSE_TIMEOUT:-180}"
   if command -v timeout >/dev/null 2>&1; then
     # timeout(1) returns 124 on expiry; treat that as a soft failure.
-    if ! timeout "$timeout_s" $DOCKER "${args[@]}"; then
+    # shellcheck disable=SC2086
+    if ! timeout "$timeout_s" $ODYSSEUS_DOCKER "${args[@]}"; then
       local rc=$?
       echo "cloud-agent-start: docker compose timed out or failed (exit $rc, limit ${timeout_s}s)" >&2
       return "$rc"
     fi
     return 0
   fi
-  $DOCKER "${args[@]}"
+  # shellcheck disable=SC2086
+  $ODYSSEUS_DOCKER "${args[@]}"
 }
 
 _cmd_start_docker() {
-  _start_dockerd || true
-  _detect_docker
-  if ! $DOCKER info >/dev/null 2>&1; then
-    echo "Docker unavailable — falling back to sidecars-only start (set ODYSSEUS_RUNTIME=dev explicitly)." >&2
+  if ! _odysseus_ensure_docker; then
+    echo "cloud-agent-start: Docker not ready — falling back to sidecars-only start." >&2
     exec bash "$ROOT/scripts/cloud-agent-services.sh" start
   fi
   _compose_args=(compose up -d)
@@ -68,7 +48,8 @@ _cmd_start_docker() {
   fi
   if ! _compose_up "${_compose_args[@]}"; then
     echo "cloud-agent-start: full Compose failed — falling back to sidecars only." >&2
-    $DOCKER compose up -d chromadb searxng ntfy || true
+    # shellcheck disable=SC2086
+    $ODYSSEUS_DOCKER compose up -d chromadb searxng ntfy || true
     echo "Sidecars attempted; use ODYSSEUS_RUNTIME=dev + host uvicorn if the app is down."
     return 0
   fi
