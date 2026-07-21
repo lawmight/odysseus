@@ -10,6 +10,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# shellcheck disable=SC1091
+source "$ROOT/scripts/cloud-agent-docker.sh"
+
 STAMP_PATH="venv/.odysseus-install-stamp"
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -140,6 +143,12 @@ _ensure_auth() {
 
 if _warm_install_ok && ! _truthy "${ODYSSEUS_FORCE_INSTALL:-}"; then
   _ensure_auth
+  # Still bring Docker up — JIT/warm VMs often have packages but a stopped daemon.
+  if _odysseus_ensure_docker; then
+    echo "cloud-agent-install: Docker ready ($ODYSSEUS_DOCKER)"
+  else
+    echo "cloud-agent-install: Docker not ready yet — start script will retry for sidecars"
+  fi
   if _should_install_cursor; then
     echo "cloud-agent-install: OK (warm skip — stamp matches; cursor-sdk present)"
   else
@@ -173,6 +182,14 @@ if [[ -f package.json ]] && command -v npm >/dev/null 2>&1; then
 fi
 
 _ensure_auth
+
+# Ensure Docker is present on JIT Cloud VMs (no snapshot). Sidecar start still
+# brings the daemon up; installing here means subsequent warm boots keep it.
+if _odysseus_ensure_docker; then
+  echo "cloud-agent-install: Docker ready ($ODYSSEUS_DOCKER)"
+else
+  echo "cloud-agent-install: Docker not ready yet — start script will retry for sidecars"
+fi
 
 _req_stamp >"$STAMP_PATH"
 

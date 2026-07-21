@@ -5,42 +5,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-DOCKER="docker"
-
-_detect_docker() {
-  DOCKER="docker"
-  if ! docker info >/dev/null 2>&1; then
-    if sudo docker info >/dev/null 2>&1; then
-      DOCKER="sudo docker"
-    fi
-  fi
-}
-
-_detect_docker
-
-_start_dockerd() {
-  if docker info >/dev/null 2>&1 || sudo docker info >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v dockerd >/dev/null 2>&1; then
-    echo "Starting dockerd (may need sudo)…"
-    sudo sh -c 'dockerd >/tmp/dockerd.log 2>&1 &'
-    sleep 3
-  fi
-}
+# shellcheck disable=SC1091
+source "$ROOT/scripts/cloud-agent-docker.sh"
 
 cmd="${1:-}"
 
 case "$cmd" in
   start)
-    _start_dockerd || true
-    _detect_docker
-    if $DOCKER info >/dev/null 2>&1; then
-      $DOCKER compose up -d chromadb searxng ntfy
+    if _odysseus_ensure_docker; then
+      # shellcheck disable=SC2086
+      $ODYSSEUS_DOCKER compose up -d chromadb searxng ntfy
       echo "Sidecars up (Chroma 8100, SearXNG 8080, ntfy 8091)."
     else
-      echo "Docker unavailable — app runs without vector memory / SearXNG sidecars."
-      echo "Fix: sudo apt install docker.io && sudo usermod -aG docker \"\$USER\" (new session), or use dashboard snapshot with Docker."
+      echo "cloud-agent-services: notice — Docker not ready; continuing without Chroma/SearXNG sidecars."
+      echo "cloud-agent-services: Odysseus Chat/Agent still work; vector memory and web search stay degraded until Docker is available."
+      if [[ -f /tmp/dockerd.log ]]; then
+        echo "cloud-agent-services: see /tmp/dockerd.log for daemon errors."
+      fi
     fi
     ;;
   dev-server)
@@ -61,11 +42,12 @@ case "$cmd" in
     # Leftover Compose `odysseus` from a prior ODYSSEUS_RUNTIME=docker boot steals
     # :7000 and makes the host uvicorn terminal exit immediately — Long-running
     # agents then look "stuck" with no UI. Stop only the app container; keep sidecars.
-    _detect_docker
-    if $DOCKER info >/dev/null 2>&1; then
-      if $DOCKER compose ps --status running odysseus 2>/dev/null | grep -q odysseus; then
+    if _odysseus_detect_docker; then
+      # shellcheck disable=SC2086
+      if $ODYSSEUS_DOCKER compose ps --status running odysseus 2>/dev/null | grep -q odysseus; then
         echo "cloud-agent-services: stopping Compose odysseus so host uvicorn can bind :${_port}"
-        $DOCKER compose stop odysseus >/dev/null || true
+        # shellcheck disable=SC2086
+        $ODYSSEUS_DOCKER compose stop odysseus >/dev/null || true
       fi
     fi
     exec uvicorn app:app --host "$_bind" --port "$_port"

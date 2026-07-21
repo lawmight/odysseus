@@ -12,6 +12,7 @@ These paths support **lawmight/odysseus** Cloud Agent workflows and fork CI. **E
 | [scripts/cloud-agent-install.sh](../../scripts/cloud-agent-install.sh) | VM bootstrap (venv, optional cursor-sdk) |
 | [scripts/cloud-agent-start.sh](../../scripts/cloud-agent-start.sh) | `ODYSSEUS_RUNTIME` docker vs dev |
 | [scripts/cloud-agent-services.sh](../../scripts/cloud-agent-services.sh) | Sidecars + host dev-server |
+| [scripts/cloud-agent-docker.sh](../../scripts/cloud-agent-docker.sh) | Nested Docker bootstrap (install/start dockerd) |
 
 ## Fork CI / PR workflow
 
