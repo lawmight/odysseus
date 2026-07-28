@@ -1044,6 +1044,31 @@ def _provider_label(url: str) -> str:
     return host or "provider"
 
 
+def _is_openai_hosted_chat_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url or "")
+    except Exception:
+        return False
+    path = (parsed.path or "").rstrip("/")
+    return _host_match(url, "openai.com") and path.endswith("/chat/completions")
+
+
+def _model_disallows_reasoning_effort_with_chat_tools(model: str) -> bool:
+    """OpenAI GPT 5.x variants reject reasoning_effort + tools on chat completions."""
+    m = (model or "").strip().lower()
+    return bool(re.match(r"^(?:openai/)?gpt-5(?:[.\-]\d+)?(?:[-_:].*)?$", m))
+
+
+def _scrub_openai_chat_tool_reasoning(payload: Dict, target_url: str, model: str) -> None:
+    if not payload.get("tools"):
+        return
+    if not _is_openai_hosted_chat_url(target_url):
+        return
+    if not _model_disallows_reasoning_effort_with_chat_tools(model):
+        return
+    payload["reasoning_effort"] = "none"
+
+
 def _normalize_chatgpt_subscription_url(url: str) -> str:
     base = (url or "").strip().rstrip("/")
     if base.endswith("/responses"):
@@ -1693,15 +1718,6 @@ def _configured_cached_model_ids(
     return []
 
 
-def _normalize_headers(headers):
-    if isinstance(headers, str):
-        try:
-            headers = json.loads(headers)
-        except Exception:
-            return None
-    return headers if isinstance(headers, dict) else None
-
-
 def list_model_ids(
     base_chat_url: str,
     timeout: int = LLMConfig.DEFAULT_TIMEOUT,
@@ -1718,8 +1734,14 @@ def list_model_ids(
     if provider == "cursor":
         try:
             from src.providers.cursor_adapter import extract_cursor_api_key, list_cursor_models
-            normalized_headers = _normalize_headers(headers)
-            return list_cursor_models(extract_cursor_api_key(normalized_headers), timeout=timeout)
+            h = headers
+            if isinstance(h, str):
+                try:
+                    h = json.loads(h)
+                except Exception:
+                    h = None
+            h = h if isinstance(h, dict) else None
+            return list_cursor_models(extract_cursor_api_key(h), timeout=timeout)
         except Exception:
             return []
     if provider == "anthropic":
@@ -2130,15 +2152,22 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground", **kwargs):
+    # Cursor SDK bridge — no HTTP local-slot / OpenAI path.
     if _detect_provider(url) == "cursor":
         from src.providers.cursor_adapter import (
             extract_cursor_api_key,
             extract_cursor_cwd,
             stream_cursor_chat,
         )
-        normalized_headers = _normalize_headers(headers)
-        api_key = extract_cursor_api_key(normalized_headers)
-        cwd = extract_cursor_cwd(normalized_headers)
+        h = headers
+        if isinstance(h, str):
+            try:
+                h = json.loads(h)
+            except Exception:
+                h = None
+        h = h if isinstance(h, dict) else None
+        api_key = extract_cursor_api_key(h)
+        cwd = extract_cursor_cwd(h)
         cursor_meta = kwargs.pop("cursor_meta", None) or {}
         cursor_agent_id = cursor_meta.get("agent_id")
         odysseus_session_id = cursor_meta.get("session_id")
@@ -2179,6 +2208,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             tools=tools,
             session_id=session_id,
             tool_choice_none=tool_choice_none,
+            **kwargs,
         ):
             yield chunk
 
@@ -2187,7 +2217,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                             timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                             tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                            tool_choice_none: bool = False):
+                            tool_choice_none: bool = False, **kwargs):
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
@@ -2262,6 +2292,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             payload["think"] = False
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
+        _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         h = _provider_headers(provider, headers)
         if provider == "copilot":
             from src.copilot import apply_request_headers

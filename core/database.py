@@ -197,6 +197,9 @@ class Session(TimestampMixin, Base):
     
     # Headers stored as JSON
     headers = Column(JSON, default=dict)
+
+    # Cursor SDK durable agent handle (Chat-only BYOK); null until first turn.
+    cursor_agent_id = Column(String, nullable=True)
     
     # Timestamps are provided by TimestampMixin
     last_accessed = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -217,8 +220,6 @@ class Session(TimestampMixin, Base):
     # Properties
     is_important = Column(Boolean, default=False)
     message_count = Column(Integer, default=0)
-    # Cursor SDK durable agent handle (Chat-only BYOK); null until first turn.
-    cursor_agent_id = Column(String, nullable=True)
     total_input_tokens = Column(Integer, default=0)
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
@@ -978,6 +979,57 @@ def _migrate_add_provider_auth_id_column():
             pass
 
 
+def _migrate_add_model_endpoint_provider_columns():
+    """Add provider metadata columns to model_endpoints if missing."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(model_endpoints)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if columns and "provider" not in columns:
+            conn.execute("ALTER TABLE model_endpoints ADD COLUMN provider TEXT DEFAULT 'openai_compat'")
+        if columns and "provider_config" not in columns:
+            conn.execute("ALTER TABLE model_endpoints ADD COLUMN provider_config TEXT")
+        conn.commit()
+        if columns and ("provider" not in columns or "provider_config" not in columns):
+            logging.getLogger(__name__).info("Migrated: added provider metadata columns to model_endpoints")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"model endpoint provider metadata migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_cursor_agent_id_column():
+    """Add cursor_agent_id to sessions for Cursor SDK Agent.resume."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(sessions)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "cursor_agent_id" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN cursor_agent_id TEXT")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'cursor_agent_id' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"cursor_agent_id migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _migrate_add_model_type_column():
     """Add model_type column to model_endpoints if it doesn't exist."""
     import sqlite3
@@ -1152,45 +1204,6 @@ def _migrate_add_notes_sort_order():
             conn.close()
         except Exception:
             pass
-
-
-def _migrate_add_model_endpoint_provider_columns():
-    """Add provider metadata columns to model_endpoints if missing."""
-    import sqlite3
-    db_path = DATABASE_URL.replace("sqlite:///", "")
-    if not os.path.exists(db_path):
-        return
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("PRAGMA table_info(model_endpoints)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if columns and "provider" not in columns:
-            conn.execute("ALTER TABLE model_endpoints ADD COLUMN provider TEXT DEFAULT 'openai_compat'")
-        if columns and "provider_config" not in columns:
-            conn.execute("ALTER TABLE model_endpoints ADD COLUMN provider_config TEXT")
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"model endpoint provider metadata migration failed: {e}")
-
-
-def _migrate_add_cursor_agent_id_column():
-    """Add cursor_agent_id to sessions for Cursor SDK Agent.resume."""
-    import sqlite3
-    db_path = DATABASE_URL.replace("sqlite:///", "")
-    if not os.path.exists(db_path):
-        return
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("PRAGMA table_info(sessions)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "cursor_agent_id" not in columns:
-            conn.execute("ALTER TABLE sessions ADD COLUMN cursor_agent_id TEXT")
-            conn.commit()
-            logging.getLogger(__name__).info("Migrated: added 'cursor_agent_id' to sessions")
-        conn.close()
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"cursor_agent_id migration failed: {e}")
 
 def _migrate_add_mode_column():
     """Add mode column to sessions table if it doesn't exist."""
@@ -1977,6 +1990,7 @@ def init_db():
     _migrate_add_model_endpoint_refresh_columns()
     _migrate_add_model_endpoint_owner_column()
     _migrate_add_provider_auth_id_column()
+    _migrate_add_model_endpoint_provider_columns()
     _migrate_add_supports_tools_column()
     _migrate_add_task_run_model_column()
     _migrate_add_owner_column()
@@ -1985,6 +1999,7 @@ def init_db():
     _migrate_add_folder_column()
     _migrate_add_token_columns()
     _migrate_add_mode_column()
+    _migrate_add_cursor_agent_id_column()
     _migrate_add_multiuser_owner_columns()
     _migrate_add_gallery_caption_column()
     _migrate_add_api_token_scopes_column()

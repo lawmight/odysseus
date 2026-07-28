@@ -29,6 +29,7 @@ from src.endpoint_resolver import (
     build_models_url,
     build_headers,
 )
+from src.auth_helpers import _auth_disabled, effective_user, owner_filter
 from src.providers.cursor_adapter import (
     CURSOR_LOCAL_URL,
     CURSOR_SDK_AVAILABLE,
@@ -43,7 +44,6 @@ from src.providers.cursor_adapter import (
     parse_provider_config,
     validate_cursor_cwd,
 )
-from src.auth_helpers import _auth_disabled, effective_user, owner_filter
 
 logger = logging.getLogger(__name__)
 
@@ -593,15 +593,6 @@ def _hidden_model_ids(ep: Any) -> set:
     return set(_parse_model_list(getattr(ep, "hidden_models", None)))
 
 
-def _is_ollama_base(base_url: str) -> bool:
-    try:
-        parsed = urlparse(base_url)
-        host = (parsed.hostname or "").lower()
-        return parsed.port == 11434 or "ollama" in host
-    except Exception:
-        return "ollama" in (base_url or "").lower()
-
-
 def _normalize_provider(provider: str | None, base_url: str | None) -> str:
     raw = (provider or "").strip().lower()
     if raw == "cursor" or is_cursor_url(base_url):
@@ -616,6 +607,14 @@ def _endpoint_base_and_provider(ep) -> tuple[str, str]:
     base = CURSOR_LOCAL_URL if provider == "cursor" else _normalize_base(ep.base_url)
     return base, provider
 
+
+def _is_ollama_base(base_url: str) -> bool:
+    try:
+        parsed = urlparse(base_url)
+        host = (parsed.hostname or "").lower()
+        return parsed.port == 11434 or "ollama" in host
+    except Exception:
+        return "ollama" in (base_url or "").lower()
 
 
 # Prefixes/substrings for models that are NOT chat-completions-capable
@@ -826,8 +825,6 @@ def _classify_endpoint(base_url: str, endpoint_kind: str = "auto") -> str:
         return "local"
     if kind in ("api", "proxy"):
         return "api"
-    if is_cursor_url(base_url):
-        return "local"
     try:
         host = urlparse(base_url).hostname or ""
         if host in _LOCAL_HOSTS or _local_ip_literal(host):
@@ -996,7 +993,7 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
     For Anthropic, queries their /v1/models API, falling back to hardcoded list."""
     from src.endpoint_resolver import resolve_url
     from src.llm_core import httpx_get_kimi_aware
-    if is_cursor_url(base_url) or is_cursor_url(_normalize_base(base_url)):
+    if is_cursor_url(base_url):
         try:
             return list_cursor_models(api_key, timeout=timeout)
         except CursorAdapterError as e:
@@ -1111,6 +1108,18 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
 def _ping_endpoint(base_url: str, api_key: str = None, timeout: float = 1.5) -> Dict[str, Any]:
     """Reachability probe that does not require installed/listed models."""
     from src.endpoint_resolver import resolve_url
+    if is_cursor_url(base_url):
+        if not CURSOR_SDK_AVAILABLE:
+            return {"reachable": False, "status_code": None, "error": CURSOR_SDK_MISSING}
+        try:
+            import asyncio as _asyncio
+            # Sync context: list models with short timeout
+            list_cursor_models(api_key, timeout=min(float(timeout), 1.5))
+            return {"reachable": True, "status_code": 200, "error": None}
+        except CursorAdapterError as e:
+            return {"reachable": False, "status_code": getattr(e, "status", None), "error": str(e)[:120]}
+        except Exception as e:
+            return {"reachable": False, "status_code": None, "error": str(e)[:120]}
     base = resolve_url(_normalize_base(base_url))
     headers = _safe_build_headers(api_key, base)
 
@@ -1359,6 +1368,56 @@ def _visible_models(cached_models, hidden_models, pinned_models=None):
     return [m for m in merged if m not in hidden]
 
 
+def _picker_requires_pinning(base_url: str, kind: str) -> bool:
+    return _classify_endpoint(base_url, kind) == "api"
+
+
+def _has_explicit_pinned_models(ep) -> bool:
+    """Whether pinned_models was deliberately written for this endpoint.
+
+    API endpoints use pinned_models as an allow-list. An explicit empty JSON
+    list means "show no models"; it must not fall back to the old hidden-list
+    migration behavior.
+    """
+    raw = getattr(ep, "pinned_models", None)
+    return raw is not None and str(raw).strip() != ""
+
+
+def _legacy_visible_api_models(ep) -> List[str]:
+    """Return API models selected under the old hidden-list picker.
+
+    Before API endpoints switched to an explicit allow-list, selected models
+    were represented as cached_models minus hidden_models. Existing OpenRouter
+    rows can therefore have many checked models and an empty pinned_models
+    field. Treat that old state as the initial pinned list so settings and chat
+    agree after upgrade.
+    """
+    return _visible_models(
+        _cached_model_ids(ep),
+        getattr(ep, "hidden_models", None),
+        None,
+    )
+
+
+def _picker_models_for_endpoint(ep, base_url: str, kind: str):
+    """Return model IDs that should appear in the picker for an endpoint.
+
+    API providers expose remote inventory from /v1/models. Treat that cache as
+    inventory, not approval: only manually pinned API models should appear in
+    the picker. Local/self-hosted endpoints keep the older hide-list behavior.
+    """
+    pinned = _normalize_model_ids(getattr(ep, "pinned_models", None))
+    if _picker_requires_pinning(base_url, kind):
+        if not _has_explicit_pinned_models(ep):
+            pinned = _legacy_visible_api_models(ep) if _hidden_model_ids(ep) else []
+        return pinned, pinned
+    return _visible_models(
+        _cached_model_ids(ep),
+        getattr(ep, "hidden_models", None),
+        pinned,
+    ), pinned
+
+
 def _api_key_fingerprint(api_key: Optional[str]) -> str:
     """Stable, non-secret label for distinguishing same-URL credentials."""
     key = (api_key or "").strip()
@@ -1410,9 +1469,13 @@ def setup_model_routes(model_discovery):
         return min(_REFRESH_FAILURE_BASE * (2 ** max(0, fails - 1)), _REFRESH_FAILURE_MAX)
 
     def _should_refresh_endpoint(ep: Any, now: float, force: bool = False) -> tuple[bool, Dict[str, Any]]:
-        base = _normalize_base(getattr(ep, "base_url", "") or "")
-        kind = _effective_endpoint_kind(ep, base)
-        category = _classify_endpoint(base, kind)
+        base, endpoint_provider = _endpoint_base_and_provider(ep)
+        if endpoint_provider == "cursor":
+            kind = _endpoint_kind(ep) or "auto"
+            category = "api"
+        else:
+            kind = _effective_endpoint_kind(ep, base)
+            category = _classify_endpoint(base, kind)
         mode = _endpoint_refresh_mode(ep, kind)
         cached = _cached_model_ids(ep)
         key = _refresh_key(base, getattr(ep, "api_key", None))
@@ -1491,8 +1554,16 @@ def setup_model_routes(model_discovery):
 
                     def _probe_one(key: str, data: Dict[str, Any]):
                         try:
-                            ids = _probe_endpoint(data["base"], data.get("api_key"), timeout=data.get("timeout") or 2)
-                            return key, data["endpoint_ids"], ids, None
+                            base = data["base"]
+                            if is_cursor_url(base):
+                                payload = list_cursor_model_entries(
+                                    data.get("api_key"), timeout=data.get("timeout") or 2
+                                )
+                            else:
+                                payload = _probe_endpoint(
+                                    base, data.get("api_key"), timeout=data.get("timeout") or 2
+                                )
+                            return key, data["endpoint_ids"], payload, None
                         except Exception as e:
                             return key, data["endpoint_ids"], None, e
 
@@ -1557,28 +1628,30 @@ def setup_model_routes(model_discovery):
         for ep in endpoints:
             base, endpoint_provider = _endpoint_base_and_provider(ep)
             provider = "cursor" if endpoint_provider == "cursor" else _safe_detect_provider(base)
-            # Merge cached + pinned models, then filter out hidden ones
             ep_model_type = getattr(ep, "model_type", None) or "llm"
             display_by_id: Dict[str, str] = {}
-            if endpoint_provider == "cursor" and ep.cached_models:
-                try:
-                    entries = normalize_cached_cursor_models(json.loads(ep.cached_models))
-                    cursor_ids = [e["id"] for e in entries]
-                    display_by_id = {e["id"]: e["displayName"] for e in entries}
-                except Exception:
-                    cursor_ids = _cached_model_ids(ep)
-                hidden = _hidden_model_ids(ep)
-                model_ids = [m for m in cursor_ids if m not in hidden]
+            if endpoint_provider == "cursor":
+                kind = _endpoint_kind(ep) or "auto"
+                category = "api"
+                if ep.cached_models:
+                    try:
+                        entries = normalize_cached_cursor_models(json.loads(ep.cached_models))
+                        cursor_ids = [e["id"] for e in entries]
+                        display_by_id = {e["id"]: e["displayName"] for e in entries}
+                    except Exception:
+                        cursor_ids = _cached_model_ids(ep)
+                    hidden = set(_hidden_model_ids(ep))
+                    model_ids = [m for m in cursor_ids if m not in hidden]
+                else:
+                    model_ids = []
+                pinned = _normalize_model_ids(getattr(ep, "pinned_models", None))
             else:
-                model_ids = _visible_models(
-                    _cached_model_ids(ep),
-                    ep.hidden_models,
-                    getattr(ep, "pinned_models", None),
-                )
-            # Build correct URL based on provider
+                # Build correct URL based on provider
+                kind = _effective_endpoint_kind(ep, base)
+                category = _classify_endpoint(base, kind)
+                model_ids, pinned = _picker_models_for_endpoint(ep, base, kind)
+
             chat_url = build_chat_url(base)
-            kind = _effective_endpoint_kind(ep, base)
-            category = _classify_endpoint(base, kind)
 
             def _model_display(mid: str) -> str:
                 if mid in display_by_id:
@@ -1590,7 +1663,6 @@ def setup_model_routes(model_discovery):
                 curated, extra = _curate_models(model_ids, curated_key)
                 # Pinned models are admin-selected — they always belong in the
                 # primary curated list, not buried in extras.
-                pinned = _normalize_model_ids(getattr(ep, "pinned_models", None))
                 for m in pinned:
                     if m not in curated:
                         curated.append(m)
@@ -1713,7 +1785,9 @@ def setup_model_routes(model_discovery):
                 endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
                 local_eps = []
                 for ep in endpoints:
-                    base = _normalize_base(ep.base_url)
+                    base, ep_provider = _endpoint_base_and_provider(ep)
+                    if ep_provider == "cursor" or is_cursor_url(base):
+                        continue
                     kind = _effective_endpoint_kind(ep, base)
                     if _classify_endpoint(base, kind) == "local":
                         local_eps.append((ep.id, base, ep.api_key))
@@ -1955,40 +2029,60 @@ def setup_model_routes(model_discovery):
                 _invalidate_models_cache()
             rows = db.query(ModelEndpoint).order_by(ModelEndpoint.created_at).all()
             results = []
+            upgraded_legacy_pins = False
             for r in rows:
                 prov = _normalize_provider(getattr(r, "provider", None), r.base_url)
-                all_models = _cached_model_ids(r)
+                all_models: List[Any] = []
                 raw = None
-                if prov == "cursor" and r.cached_models:
+                if r.cached_models:
                     try:
                         raw = json.loads(r.cached_models)
-                        all_models = normalize_cached_cursor_models(raw)
+                        if prov == "cursor":
+                            all_models = normalize_cached_cursor_models(raw)
+                        else:
+                            all_models = raw if isinstance(raw, list) else []
                     except Exception:
                         pass
+                if prov != "cursor":
+                    all_models = _cached_model_ids(r)
                 hidden = _hidden_model_ids(r)
                 pinned = _normalize_model_ids(getattr(r, "pinned_models", None))
-                visibility_src = (
-                    cached_model_ids(raw) if prov == "cursor" and raw is not None else all_models
-                )
-                visible = _visible_models(visibility_src, getattr(r, 'hidden_models', None), pinned)
-                display_by_id = {}
-                if prov == "cursor" and isinstance(all_models, list):
+                # Keep the list route cache-only. It feeds Settings →
+                # Added Models and must render immediately; explicit
+                # Refresh/Probe endpoints do the network work.
+                ping = None
+                if prov == "cursor":
+                    base = CURSOR_LOCAL_URL
+                    kind = _endpoint_kind(r) or "auto"
+                    category = "api"
+                    visibility_src = (
+                        cached_model_ids(raw) if raw is not None else [m.get("id") if isinstance(m, dict) else str(m) for m in all_models]
+                    )
+                    visible = _visible_models(visibility_src, getattr(r, "hidden_models", None), pinned)
+                    display_by_id = {}
                     for m in all_models:
                         mid = m.get("id") if isinstance(m, dict) else str(m)
                         display_by_id[mid] = (
                             m.get("displayName") if isinstance(m, dict) else str(m)
                         )
-                models_display = [display_by_id.get(mid, mid) for mid in visible] if display_by_id else visible
-                # Keep the list route cache-only. It feeds Settings →
-                # Added Models and must render immediately; explicit
-                # Refresh/Probe endpoints do the network work.
-                status = "online" if (all_models or pinned) else ("empty" if r.is_enabled else "offline")
-                ping = None
+                    models_display = [display_by_id.get(mid, mid) for mid in visible]
+                    model_inventory_count = len(_merge_model_ids(visibility_src, pinned))
+                    picker_requires_pinning = False
+                else:
+                    base = _normalize_base(r.base_url)
+                    kind = _effective_endpoint_kind(r, base)
+                    category = _classify_endpoint(base, kind)
+                    visible, pinned = _picker_models_for_endpoint(r, base, kind)
+                    if _picker_requires_pinning(base, kind) and pinned and not _has_explicit_pinned_models(r):
+                        r.pinned_models = json.dumps(pinned)
+                        upgraded_legacy_pins = True
+                    model_inventory_count = len(_merge_model_ids(all_models, pinned))
+                    picker_requires_pinning = _picker_requires_pinning(base, kind)
+                    models_display = None
                 cursor_sdk_missing = prov == "cursor" and not CURSOR_SDK_AVAILABLE
+                status = "online" if (all_models or visible or pinned) else ("empty" if r.is_enabled else "offline")
                 if cursor_sdk_missing and all_models:
                     status = "sdk_missing"
-                base = CURSOR_LOCAL_URL if prov == "cursor" else _normalize_base(r.base_url)
-                kind = _effective_endpoint_kind(r, base)
                 entry = {
                     "id": r.id,
                     "name": r.name,
@@ -1997,7 +2091,8 @@ def setup_model_routes(model_discovery):
                     "api_key_fingerprint": _api_key_fingerprint(r.api_key),
                     "is_enabled": r.is_enabled,
                     "models": visible,
-                    "models_display": models_display,
+                    "model_count": model_inventory_count,
+                    "picker_requires_pinning": picker_requires_pinning,
                     "pinned_models": pinned,
                     "hidden_count": len(hidden),
                     "online": status not in ("offline", "sdk_missing"),
@@ -2008,14 +2103,19 @@ def setup_model_routes(model_discovery):
                     "provider": prov,
                     "provider_config": getattr(r, "provider_config", None),
                     "endpoint_kind": kind,
-                    "category": _classify_endpoint(base, kind),
+                    "category": category,
                     "model_refresh_mode": _endpoint_refresh_mode(r, kind),
                     "model_refresh_interval": getattr(r, "model_refresh_interval", None),
                     "model_refresh_timeout": getattr(r, "model_refresh_timeout", None),
                 }
+                if models_display is not None:
+                    entry["models_display"] = models_display
                 if cursor_sdk_missing:
                     entry["cursor_sdk_missing"] = True
                 results.append(entry)
+            if upgraded_legacy_pins:
+                db.commit()
+                _invalidate_models_cache()
             if include_meta:
                 return {
                     "endpoints": results,
@@ -2053,8 +2153,8 @@ def setup_model_routes(model_discovery):
         shared: str = Form("true"),
     ):
         require_admin(request)
-        # Direct unit-test calls bypass FastAPI form parsing and may pass Form()
-        # sentinel objects for omitted kwargs — coerce those to empty strings.
+        # Plain-function unit tests bypass FastAPI Form parsing and may pass
+        # Form() sentinels for omitted kwargs — coerce those to empty strings.
         if not isinstance(provider, str):
             provider = ""
         if not isinstance(provider_config, str):
@@ -2078,7 +2178,7 @@ def setup_model_routes(model_discovery):
             try:
                 cursor_workspace = validate_cursor_cwd(cursor_cwd_value or None)
             except CursorAdapterError as e:
-                raise HTTPException(e.status, str(e))
+                raise HTTPException(getattr(e, "status", 400) or 400, str(e))
             provider_config_value = cursor_provider_config(cursor_workspace)
             normalized_model_type = "llm"
         else:
@@ -2093,12 +2193,13 @@ def setup_model_routes(model_discovery):
             # keep those container-local when the frontend marks them as such.
             base_url = _rewrite_loopback_for_docker(base_url, container_local=_truthy(container_local))
 
-        if not base_url:
-            raise HTTPException(400, "Base URL is required")
-
         # Auto-generate name from URL if not provided
         if not name.strip():
-            name = "Cursor (local)" if endpoint_provider == "cursor" else base_url.replace("http://", "").replace("https://", "").split("/")[0]
+            name = (
+                "Cursor (local)"
+                if endpoint_provider == "cursor"
+                else base_url.replace("http://", "").replace("https://", "").split("/")[0]
+            )
 
         requested_kind = _normalize_endpoint_kind(endpoint_kind)
         if endpoint_provider == "cursor":
@@ -2167,6 +2268,10 @@ def setup_model_routes(model_discovery):
                 if refresh_timeout is not None:
                     existing.model_refresh_timeout = refresh_timeout
                     changed = True
+                incoming_model_type = (model_type or "").strip() or "llm"
+                if incoming_model_type and (getattr(existing, "model_type", None) or "llm") != incoming_model_type:
+                    existing.model_type = incoming_model_type
+                    changed = True
                 if api_key.strip() and not existing.api_key:
                     existing.api_key = api_key.strip()
                     changed = True
@@ -2177,7 +2282,7 @@ def setup_model_routes(model_discovery):
                 # contend with session creation, making "send" feel blocked.
                 # Explicit "require models" calls still probe; normal refresh
                 # belongs to /model-endpoints/{id}/models or /probe.
-                if require_model_list:
+                if require_model_list and endpoint_provider != "cursor":
                     probed_models = _probe_endpoint(
                         base_url,
                         (api_key.strip() or existing.api_key or None),
@@ -2186,11 +2291,37 @@ def setup_model_routes(model_discovery):
                     if probed_models:
                         existing.cached_models = json.dumps(probed_models)
                         changed = True
+                elif should_probe and endpoint_provider == "cursor":
+                    try:
+                        probed_entries = list_cursor_model_entries(
+                            api_key.strip() or existing.api_key, timeout=5
+                        )
+                        if probed_entries:
+                            existing.cached_models = json.dumps(probed_entries)
+                            changed = True
+                    except CursorAdapterError:
+                        pass
+                # Persist cursor provider metadata on deduped row
+                if endpoint_provider == "cursor":
+                    if getattr(existing, "provider", None) != "cursor":
+                        existing.provider = "cursor"
+                        changed = True
+                    if provider_config_value and getattr(existing, "provider_config", None) != provider_config_value:
+                        existing.provider_config = provider_config_value
+                        changed = True
                 if changed:
                     _db_dedup.commit()
                     _invalidate_models_cache()
                     _local_probe_cache["data"] = None
-                existing_models = _cached_model_ids(existing)
+                _existing_provider = _normalize_provider(
+                    getattr(existing, "provider", None), existing.base_url
+                )
+                _existing_cached = getattr(existing, "cached_models", None)
+                existing_models = (
+                    cached_model_ids(_existing_cached)
+                    if _existing_provider == "cursor"
+                    else _cached_model_ids(existing)
+                )
                 _existing_pinned = _normalize_model_ids(getattr(existing, "pinned_models", None))
                 existing_kind = _effective_endpoint_kind(existing, existing.base_url)
                 return {
@@ -2208,22 +2339,32 @@ def setup_model_routes(model_discovery):
                     "online": True,
                     "status": "online",
                     "existing": True,
+                    "provider": _existing_provider,
+                    "provider_config": getattr(existing, "provider_config", None),
                     "endpoint_kind": existing_kind,
-                    "category": _classify_endpoint(existing.base_url, existing_kind),
+                    "category": (
+                        "api"
+                        if _existing_provider == "cursor"
+                        else _classify_endpoint(existing.base_url, existing_kind)
+                    ),
                 }
         finally:
             _db_dedup.close()
 
         ping = {"reachable": False, "error": None}
-        entries: list = []
+        entries: List[Dict[str, str]] = []
         if endpoint_provider == "cursor":
             try:
                 entries = list_cursor_model_entries(api_key.strip(), timeout=5) if should_probe else []
                 model_ids = [e["id"] for e in entries]
             except CursorAdapterError as e:
-                raise HTTPException(e.status, str(e))
+                raise HTTPException(getattr(e, "status", 400) or 400, str(e))
         else:
-            model_ids = _probe_endpoint(base_url, api_key.strip() or None, timeout=explicit_timeout) if should_probe else []
+            model_ids = (
+                _probe_endpoint(base_url, api_key.strip() or None, timeout=explicit_timeout)
+                if should_probe
+                else []
+            )
             if (should_probe or requested_kind in ("api", "proxy")) and not model_ids:
                 ping = _ping_endpoint(base_url, api_key.strip() or None, timeout=min(explicit_timeout, 10.0))
         if require_model_list and not model_ids:
@@ -2254,7 +2395,8 @@ def setup_model_routes(model_discovery):
                 model_refresh_interval=refresh_interval,
                 model_refresh_timeout=refresh_timeout,
                 cached_models=json.dumps(entries if endpoint_provider == "cursor" else model_ids)
-                if (entries if endpoint_provider == "cursor" else model_ids) else None,
+                if (entries if endpoint_provider == "cursor" else model_ids)
+                else None,
                 pinned_models=json.dumps(_pinned) if _pinned else None,
                 supports_tools=False if endpoint_provider == "cursor" else _st,
                 owner=_owner_val,
@@ -2308,11 +2450,16 @@ def setup_model_routes(model_discovery):
             "online": bool(model_ids) or bool(_pinned) or bool(ping.get("reachable")),
             "status": "online" if (model_ids or _pinned) else ("loading" if ping.get("loading") else ("empty" if ping.get("reachable") else "offline")),
             "ping_error": ping.get("error") if ping else None,
-            "endpoint_kind": requested_kind,
-            "category": _classify_endpoint(base_url, requested_kind),
+            "model_type": normalized_model_type,
             "supports_tools": False if endpoint_provider == "cursor" else _st,
             "provider": endpoint_provider,
             "provider_config": provider_config_value or None,
+            "endpoint_kind": requested_kind,
+            "category": (
+                "api"
+                if endpoint_provider == "cursor"
+                else _classify_endpoint(base_url, requested_kind)
+            ),
         }
 
     @router.post("/model-endpoints/test")
@@ -2413,9 +2560,10 @@ def setup_model_routes(model_discovery):
                 raise HTTPException(404, "Endpoint not found")
             hidden = _hidden_model_ids(ep)
             all_models = _cached_model_ids(ep)
+            base = _normalize_base(ep.base_url)
+            kind = _effective_endpoint_kind(ep, base)
+            picker_requires_pinning = _picker_requires_pinning(base, kind)
             if refresh:
-                base = _normalize_base(ep.base_url)
-                kind = _effective_endpoint_kind(ep, base)
                 category = _classify_endpoint(base, kind)
                 timeout = _manual_refresh_timeout(ep, category, refresh_timeout)
                 try:
@@ -2434,6 +2582,8 @@ def setup_model_routes(model_discovery):
                     response.headers["X-Model-Refresh-Status"] = "failed"
                     response.headers["X-Model-Refresh-Warning"] = "Model refresh failed or returned no models; kept cached models."
             pinned = _normalize_model_ids(getattr(ep, "pinned_models", None))
+            if picker_requires_pinning and not _has_explicit_pinned_models(ep):
+                pinned = _legacy_visible_api_models(ep)
             pinned_set = set(pinned)
             return [
                 {
@@ -2441,6 +2591,7 @@ def setup_model_routes(model_discovery):
                     "display": m.split("/")[-1],
                     "is_hidden": m in hidden,
                     "is_pinned": m in pinned_set,
+                    "picker_requires_pinning": picker_requires_pinning,
                 }
                 for m in _merge_model_ids(all_models, pinned)
             ]
@@ -2469,11 +2620,28 @@ def setup_model_routes(model_discovery):
                 hidden = body.get("hidden")
                 if not isinstance(hidden, list):
                     raise HTTPException(400, "hidden must be a list of model IDs")
-                ep.hidden_models = json.dumps(hidden) if hidden else None
+                base = _normalize_base(ep.base_url)
+                kind = _effective_endpoint_kind(ep, base)
+                if _picker_requires_pinning(base, kind):
+                    # Compatibility for older/admin UI paths that still submit
+                    # the previous hide-list shape. API pickers are allow-lists:
+                    # convert "unchecked models" into an explicit pinned list so
+                    # Settings summary, /api/models, and chat agree.
+                    selected = _visible_models(_cached_model_ids(ep), hidden, None)
+                    ep.pinned_models = json.dumps(selected)
+                    ep.hidden_models = None
+                else:
+                    ep.hidden_models = json.dumps(hidden) if hidden else None
             # Accept either "pinned" or "pinned_models" for the manual IDs list.
             if "pinned_models" in body or "pinned" in body:
                 pinned = _normalize_model_ids(body.get("pinned_models", body.get("pinned")))
-                ep.pinned_models = json.dumps(pinned) if pinned else None
+                base = _normalize_base(ep.base_url)
+                kind = _effective_endpoint_kind(ep, base)
+                if _picker_requires_pinning(base, kind):
+                    ep.pinned_models = json.dumps(pinned)
+                    ep.hidden_models = None
+                else:
+                    ep.pinned_models = json.dumps(pinned) if pinned else None
             db.commit()
             _invalidate_models_cache()
             hidden_count = len(json.loads(ep.hidden_models)) if ep.hidden_models else 0
@@ -2583,11 +2751,20 @@ def setup_model_routes(model_discovery):
                 ep = _last_q.first()
             if not ep:
                 return {"endpoint_id": "", "endpoint_url": "", "model": ""}
-            base = _normalize_base(ep.base_url)
+            base, _endpoint_provider = _endpoint_base_and_provider(ep)
             chat_url = build_chat_url(base)
             if not model and (getattr(ep, "cached_models", None) or getattr(ep, "pinned_models", None)):
                 try:
-                    visible = _visible_models(ep.cached_models, getattr(ep, "hidden_models", None), getattr(ep, "pinned_models", None))
+                    _vis_src = (
+                        cached_model_ids(ep.cached_models)
+                        if _endpoint_provider == "cursor"
+                        else ep.cached_models
+                    )
+                    visible = _visible_models(
+                        _vis_src,
+                        getattr(ep, "hidden_models", None),
+                        getattr(ep, "pinned_models", None),
+                    )
                     if visible:
                         model = visible[0]
                 except Exception:
@@ -2623,10 +2800,19 @@ def setup_model_routes(model_discovery):
                 if "name" in body and isinstance(body["name"], str):
                     ep.name = body["name"].strip() or ep.name
                 if "model_type" in body and isinstance(body["model_type"], str):
-                    ep.model_type = body["model_type"].strip() or ep.model_type
+                    next_model_type = body["model_type"].strip() or ep.model_type
+                    if _normalize_provider(getattr(ep, "provider", None), getattr(ep, "base_url", "")) == "cursor" and next_model_type != "llm":
+                        raise HTTPException(400, "Cursor endpoints only support LLM model_type")
+                    ep.model_type = next_model_type
                 if "pinned_models" in body:
                     _pinned = _normalize_model_ids(body["pinned_models"])
-                    ep.pinned_models = json.dumps(_pinned) if _pinned else None
+                    _base_for_pins = _normalize_base(ep.base_url)
+                    _kind_for_pins = _effective_endpoint_kind(ep, _base_for_pins)
+                    if _picker_requires_pinning(_base_for_pins, _kind_for_pins):
+                        ep.pinned_models = json.dumps(_pinned)
+                        ep.hidden_models = None
+                    else:
+                        ep.pinned_models = json.dumps(_pinned) if _pinned else None
                 if "endpoint_kind" in body:
                     ep.endpoint_kind = _normalize_endpoint_kind(body.get("endpoint_kind"))
                 if "model_refresh_mode" in body:

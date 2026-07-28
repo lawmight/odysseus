@@ -5,16 +5,20 @@ that ``import routes.gallery_helpers``, ``from routes.gallery_helpers import X``
 ``importlib.import_module("routes.gallery_helpers")``, and
 ``monkeypatch.setattr(routes.gallery_helpers, ...)`` all operate on the same
 object. Keeps existing import paths working after slice 2a (#4082/#4071).
+
+Cursor SDK chat/agent generateImage persistence also imports
+``save_generated_image_bytes`` from this module path — attach it onto the
+canonical module before the sys.modules swap.
 """
 
 import logging
-import sys as _sys
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
+import sys as _sys
 
-from core.database import GalleryImage, SessionLocal
 from routes.gallery import gallery_helpers as _canonical  # noqa: F401
+from core.database import SessionLocal, GalleryImage
 
 logger = logging.getLogger(__name__)
 

@@ -77,14 +77,6 @@ Referenced from `cdn.jsdelivr.net` / `cdnjs.cloudflare.com` at runtime — not v
 | [Pyodide](https://github.com/pyodide/pyodide) 0.27.5 | In-browser Python runtime | MPL-2.0 |
 | [PDFObject](https://github.com/pipwerks/PDFObject) 2.1.1 | Inline PDF embedding | MIT |
 
-## Optional Python dependencies
-
-Installed via `requirements-cursor.txt` when using Cursor as a Chat provider:
-
-| Package | Purpose | License |
-|---|---|---|
-| [cursor-sdk](https://pypi.org/project/cursor-sdk/) | Cursor local bridge + Chat streaming | See package metadata on PyPI |
-
 ## Fonts
 
 Bundled in `static/fonts/`:
@@ -95,6 +87,15 @@ Bundled in `static/fonts/`:
 | [Inter](https://github.com/rsms/inter) | SIL Open Font License 1.1 | Rasmus Andersson |
 | [GohuFont](https://font.gohu.org/) (`fonts/custom/GohuFont.ttf`) | WTFPL | Hugo Chargois |
 | [OpenDyslexic](https://opendyslexic.org/) (`fonts/OpenDyslexic-{Regular,Bold}.woff2`) | SIL Open Font License 1.1 ([`licenses/OpenDyslexic-OFL.txt`](licenses/OpenDyslexic-OFL.txt)) | Abbie Gonzalez |
+
+
+## Optional Python dependencies
+
+Installed via `requirements-cursor.txt` when using Cursor as a Chat provider:
+
+| Package | Purpose | License |
+|---|---|---|
+| [cursor-sdk](https://pypi.org/project/cursor-sdk/) | Cursor local bridge + Chat streaming | See package metadata on PyPI |
 
 ## Python dependencies
 

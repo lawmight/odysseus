@@ -47,20 +47,12 @@ _NON_CHAT_MODEL = (
 )
 
 
-def _model_id_from_cached(m) -> str:
-    if isinstance(m, dict):
-        return str(m.get("id") or m.get("model") or "")
-    return str(m or "")
-
-
 def _first_chat_model(models) -> Optional[str]:
     """First model that isn't an embedding/tts/etc.; falls back to models[0]."""
     for m in (models or []):
-        mid = _model_id_from_cached(m)
-        if mid and not any(p in mid.lower() for p in _NON_CHAT_MODEL):
-            return mid
-    raw = models or []
-    return _model_id_from_cached(raw[0]) if raw else None
+        if not any(p in str(m).lower() for p in _NON_CHAT_MODEL):
+            return m
+    return (models[0] if models else None)
 
 
 def _endpoint_cached_models(ep) -> list:
@@ -72,7 +64,11 @@ def _endpoint_cached_models(ep) -> list:
         models = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
         return []
-    return models if isinstance(models, list) else []
+    if not isinstance(models, list):
+        return []
+    if (getattr(ep, "provider", "") or "").strip() == "cursor":
+        return normalize_cached_cursor_models(models)
+    return models
 
 
 def _endpoint_pinned_models(ep) -> list:
@@ -141,10 +137,10 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
     current access token at call time.
     """
     ep_provider = (getattr(ep, "provider", "") or "").strip()
-    if ep_provider == "cursor" or is_cursor_url(getattr(ep, "base_url", "") or ""):
-        base = CURSOR_LOCAL_URL
-    else:
-        base = normalize_base(getattr(ep, "base_url", "") or "")
+    raw_base = getattr(ep, "base_url", "") or ""
+    if ep_provider == "cursor" or is_cursor_url(raw_base):
+        return CURSOR_LOCAL_URL, getattr(ep, "api_key", None)
+    base = normalize_base(raw_base)
     api_key = getattr(ep, "api_key", None)
     auth_id = getattr(ep, "provider_auth_id", None)
     if auth_id:
@@ -520,7 +516,6 @@ def resolve_vision_fallback_candidates(owner: Optional[str] = None) -> list:
 def _resolve_fallback_candidates(
     setting_key: str,
     owner: Optional[str] = None,
-    *,
     exclude_cursor: bool = False,
 ) -> list:
     out = []
@@ -533,7 +528,7 @@ def _resolve_fallback_candidates(
     for entry in chain:
         if not isinstance(entry, dict):
             continue
-        ep_id = (entry.get("endpoint_id") or "").strip()
+        ep_id = entry.get("endpoint_id", "")
         if exclude_cursor and ep_id:
             db = SessionLocal()
             try:
