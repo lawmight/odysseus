@@ -37,7 +37,12 @@ python-dateutil
 caldav
 cryptography
 bcrypt
-mcp
+# Bounded pin: mcp 2.0 dropped the `@server.list_tools()` / `@server.call_tool()`
+# decorators from the low-level `Server` class and renamed
+# `streamablehttp_client` to `streamable_http_client`, which breaks every server
+# in mcp_servers/ and the Streamable HTTP transport in src/mcp_manager.py.
+# Raise the bound only together with a port to the 2.x server API.
+mcp<2
 pyotp
 qrcode[pil]
 croniter
