@@ -2,7 +2,8 @@
 
 Odysseus integrates with **`cursor-sdk`** (local bridge + agent streaming). The package is young and event shapes can change between releases. Treat SDK bumps as a small release, not a routine `pip install -U`.
 
-**Current pin:** see [`requirements-cursor.txt`](../requirements-cursor.txt).
+**Current pin:** see [`requirements-cursor.txt`](../requirements-cursor.txt).  
+**Currency assessment + cutover plan:** [`CURSOR_INTEGRATION_CURRENCY.md`](./CURSOR_INTEGRATION_CURRENCY.md) (2026-07-30: git current on `upstream/dev`; prod still on `0.1.9` while `1.0.26` passed isolated automated probes).
 
 **Official docs:** [Cursor Python SDK](https://cursor.com/docs/sdk/python) · [Integrations / API keys](https://cursor.com/dashboard/integrations)
 
@@ -44,11 +45,11 @@ pip index versions cursor-sdk
 
 | Environment | Recommendation |
 |-------------|----------------|
-| **Production / Docker** | Exact or tight bounded pin (`>=0.1.6,<0.2`) until a version is verified |
-| **Local dev** | Same as prod; avoid unbounded `>=` without re-running tests |
-| **CI** | Install `requirements-cursor.txt` as written |
+| **Production / Docker** | Exact pin of a verified version (today: `0.1.9`; planned cutover: `1.0.26` per currency doc). Avoid wide `>=1,<2` while the bridge is vendored. |
+| **Local / probe** | Isolated venv (do not mutate the running service venv); same pin as the candidate cutover |
+| **CI** | Should install `requirements.txt` **and** `requirements-cursor.txt`, then run the Cursor-focused suite + `pip check` (see currency doc; current CI may not do this yet) |
 
-Loose pins let fresh VMs silently pick up breaking SDK releases. Prefer bumping the upper bound only after the checklist passes.
+Loose pins let fresh VMs silently pick up breaking SDK releases. Prefer bumping only after the checklist and a live Chat/Agent smoke pass.
 
 ---
 
