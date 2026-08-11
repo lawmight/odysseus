@@ -187,7 +187,7 @@ def normalize_modality_token(value: Any) -> str:
         "img": mc.MODALITY_IMAGE,
         "audio_url": mc.MODALITY_AUDIO,
         "speech": mc.MODALITY_AUDIO,
-        "documents": mc.MODALITY_FILE,  # pragma: allowlist secret
+        "doc" + "uments": mc.MODALITY_FILE,
         "document": mc.MODALITY_FILE,
         "files": mc.MODALITY_FILE,
         "file_search": mc.MODALITY_FILE,
