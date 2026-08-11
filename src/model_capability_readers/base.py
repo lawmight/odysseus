@@ -287,6 +287,7 @@ def detect_vendor(base_url: Any = "", endpoint_kind: Any = "") -> str:
         "huggingface": VENDOR_HUGGINGFACE,
         "hf": VENDOR_HUGGINGFACE,
         "cursor": VENDOR_CURSOR,
+        "cursor_local": VENDOR_CURSOR,
     }
     if kind in kind_map:
         return kind_map[kind]

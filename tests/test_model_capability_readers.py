@@ -31,6 +31,7 @@ def test_detect_vendor_uses_endpoint_kind_then_host_and_common_local_ports():
     assert detect_vendor("http://localhost:7000/v1") == VENDOR_GENERIC_OPENAI
     assert detect_vendor("cursor://local") == VENDOR_CURSOR
     assert detect_vendor("https://example.test/v1", endpoint_kind="cursor") == VENDOR_CURSOR
+    assert detect_vendor("https://example.test/v1", endpoint_kind="cursor_local") == VENDOR_CURSOR
 
 
 def test_cursor_reader_parses_items_shape_identity_only():
@@ -70,6 +71,44 @@ def test_cursor_reader_parses_legacy_models_shape():
             "models": [
                 {"id": "composer-2.5", "displayName": "Composer"},
             ],
+        },
+        base_url="cursor://local",
+    )
+
+    assert len(records) == 1
+    assert records[0].model_id == "composer-2.5"
+    assert records[0].display_name == "Composer"
+
+
+def test_cursor_reader_empty_items_does_not_shadow_models_list():
+    records = cursor.records_from_payload(
+        {
+            "items": [],
+            "models": [{"id": "composer-2.5", "displayName": "Composer"}],
+        },
+        base_url="cursor://local",
+    )
+
+    assert len(records) == 1
+    assert records[0].model_id == "composer-2.5"
+
+
+def test_cursor_reader_wraps_string_model_entries():
+    records = cursor.records_from_payload(
+        {"models": ["composer-2.5", "gpt-5.5-high"]},
+        base_url="cursor://local",
+    )
+
+    assert [record.model_id for record in records] == ["composer-2.5", "gpt-5.5-high"]
+    assert records[0].display_name == "composer-2.5"
+
+
+def test_cursor_reader_falls_back_to_data_when_items_and_models_empty():
+    records = cursor.records_from_payload(
+        {
+            "items": [],
+            "models": [],
+            "data": [{"id": "composer-2.5", "display_name": "Composer"}],
         },
         base_url="cursor://local",
     )

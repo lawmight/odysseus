@@ -1,9 +1,9 @@
 """Cursor /v1/models capability reader.
 
-Cursor's models list currently exposes model identity metadata (`id`,
-`displayName`, `name`) via an `items` array or legacy `models` array. Those
-fields prove availability, not model capabilities, so this reader keeps
-capabilities unknown unless Cursor adds explicit capability fields later.
+Cursor's models list exposes identity metadata via `items`, legacy `models`,
+or OpenAI-style `data`. Those fields prove availability, not capabilities, so
+this reader keeps capabilities unknown unless Cursor adds explicit capability
+fields later.
 """
 
 from __future__ import annotations
@@ -26,12 +26,38 @@ from src.model_capability_readers.base import (
 vendor = VENDOR_CURSOR
 
 
+def _non_empty_sequence(value: Any) -> list[Any] | None:
+    if value is None:
+        return None
+    items = as_list(value)
+    return items if items else None
+
+
+def _normalize_cursor_item(item: Any) -> Mapping[str, Any] | None:
+    if isinstance(item, Mapping):
+        return item
+    text = compact_str(item)
+    if text:
+        return {"id": text}
+    return None
+
+
 def cursor_model_items(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     payload = as_mapping(payload)
-    items = payload.get("items")
-    if items is None:
-        items = payload.get("models")
-    return tuple(item for item in as_list(items) if isinstance(item, Mapping))
+    candidates: list[Any] | None = None
+    for key in ("items", "models", "data"):
+        candidates = _non_empty_sequence(payload.get(key))
+        if candidates is not None:
+            break
+    if candidates is None:
+        return ()
+
+    out: list[Mapping[str, Any]] = []
+    for item in candidates:
+        normalized = _normalize_cursor_item(item)
+        if normalized is not None:
+            out.append(normalized)
+    return tuple(out)
 
 
 def record_from_model(
@@ -44,7 +70,7 @@ def record_from_model(
     if not model_id:
         return None
 
-    display_name = compact_str(raw.get("displayName") or raw.get("name"))
+    display_name = compact_str(raw.get("displayName") or raw.get("display_name") or raw.get("name"))
 
     return ModelCapabilityRecord(
         vendor=VENDOR_CURSOR,
